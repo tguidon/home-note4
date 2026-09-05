@@ -7,3 +7,12 @@
 .DS_Store
 __pycache__/
 *.py[cod]
+/build-host/
+/backups/
+/dist/
+.env
+.env.*
+*.local.json
+
+# Machine-specific ESP-IDF installation paths
+/tools/activate-local.sh

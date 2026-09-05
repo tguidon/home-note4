@@ -1,146 +1,114 @@
-# ZECTRIX NOTE4 E-Paper Reference Demo
+# Home Note4
 
-English | [中文](README_zh.md)
+An English dashboard for the monochrome ZECTRIX NOTE4, with weather for Wilton, Connecticut (06897), the date, Formula 1, and NFL scores. It runs directly on the ESP32-S3. No WeChat, ZECTRIX account, API key, or Mac server is required.
 
-A standalone, open-source ESP-IDF reference project for the ZECTRIX NOTE4
-4.2-inch black-and-white e-paper hardware. It demonstrates the display, audio,
-Wi-Fi, RTC, charging, LED, buttons, NFC and battery-monitoring capabilities
-through an English on-device UI.
+## Current status
 
-This project is self-contained under this directory. It does not link to the
-commercial NOTE4 firmware or require LVGL. It is a hardware demonstration and
-driver reference, not the complete NOTE4 consumer firmware or cloud service.
+The firmware builds with ESP-IDF **5.4.4** for **ESP32-S3, 16 MB flash, 8 MB octal PSRAM**. Host tests pass against captured API responses and failure cases. Screens have been rendered from the actual firmware drawing code and checked at 400 × 300.
 
-> [!IMPORTANT]
-> This project targets the black-and-white ZECTRIX NOTE4 hardware. It is not
-> compatible with NOTE4C. Flashing this demo replaces the firmware currently
-> installed on the connected device, so confirm the model and serial port
-> before running any flash command.
+**Installed on September 5, 2026.** The purchased NOTE4 DevKit documentation, factory board identifier, and USB chip information match the v1.0 N16R8 profile. Two full factory reads match byte for byte. Flash verification, dashboard boot, 8 MB PSRAM testing, RTC/NFC initialization, display-driver calls, and setup AP startup passed. The owner confirmed that the dashboard works after Wi-Fi setup. This confirms the normal setup and display path; invalid-password recovery, prolonged reconnection tests, and battery endurance remain unverified. Local installation records are in the ignored `dist/` and `backups/` directories.
 
-![Footprint animation preview](main/assets/snow_path_footprints_preview.png)
+## How it runs
 
-## Highlights
+The firmware is the application. C++ source, the hardware drivers, and ESP-IDF are compiled into native ESP32-S3 machine code. USB flashing writes this binary into the device's nonvolatile flash memory. At startup, the bootloader loads the application and starts its FreeRTOS tasks.
 
-- 400 x 300 SSD2683 e-paper display
-- Full-screen 1bpp refresh, partial 1bpp refresh and full-screen 4bpp/16-gray
-  refresh
-- Display gallery with a lighthouse print, six-step footprint animation and
-  high-contrast grayscale landscape
-- Wi-Fi RF scan, acoustic speaker/microphone loopback, PCF8563 RTC, charging,
-  LED, three-button and NFC self-tests
-- Device information page for flash, PSRAM, MAC address, peripherals and power
-- Embedded proportional-width TRMNL16 ASCII bitmap font; no runtime font or
-  filesystem dependency
-- Long-press DOWN for 3 seconds to clear the panel and shut down
-- MIT licensed by ZECTRIX Lab
+The main task handles buttons and draws the display. A background task fetches JSON directly from the weather and sports APIs over HTTPS. It validates each response and shares a snapshot with the display task. The device stores Wi-Fi settings separately in NVS, so no password is compiled into the application. During setup, the NOTE4 itself serves the small web page used to enter those settings.
 
-## Quick start
+Once configured, it operates without a computer. Code changes require a new build and USB flash; this version does not implement wireless firmware updates.
 
-Requirements: ESP-IDF 5.4 or later and a ZECTRIX NOTE4 4.2-inch ESP32-S3
-black-and-white e-paper board.
+## Pages and controls
 
-```bash
-# Run these commands from the repository root.
+- Weather: temperature, conditions, feels-like temperature, daily high and low, wind, and rain probability for Wilton.
+- F1: the next race in Eastern time, plus the latest race's top three finishers. This is a schedule/results feed, not live timing.
+- NFL: four games per page, with live games first, upcoming games next, and completed games last. Scheduled games show local dates and times, not 0–0 scores.
+- The date follows Eastern time, including daylight-saving changes.
+
+| Button | Action |
+| --- | --- |
+| Side UP / DOWN | Previous / next page |
+| Front OK | Request a refresh, limited to once per minute |
+| Hold front OK about 1.5 seconds | Restart into Wi-Fi setup |
+| Hold side DOWN about 3 seconds | Shut down; USB can keep the power rail energized |
+
+## Wi-Fi setup after installation
+
+1. Power the NOTE4 over USB.
+2. Read the temporary `HomeNote4-XXXX` network name and its random password on the display.
+3. Join that network from a phone or computer. Stay connected if it reports no internet.
+4. Open **http://192.168.4.1** in a browser.
+5. Enter your home **2.4 GHz** network name and password, then choose **Save and connect**.
+6. Reconnect the phone or computer to your home network. The NOTE4 restarts, joins Wi-Fi, sets its clock, and loads the dashboard.
+
+Setup accepts WPA2/WPA3 personal networks with an 8–63 byte password, or open networks with a blank password. Enterprise Wi-Fi and networks that require a browser login are not supported. If connection fails after 30 seconds, the setup screen returns with a new temporary password. Holding OK later also returns to setup.
+
+Network details are saved in the device's local `home_note` NVS namespace. They are not embedded in the firmware or logged. This build does not enable flash encryption. Keep flash backups private because they may contain credentials. The setup server runs only in AP setup mode, behind its random WPA2 password; a per-session form token protects saving.
+
+Internet access to NTP and the data providers is required. HTTPS certificate validation remains enabled. If the clock cannot synchronize, data requests wait. If a provider fails, the last successful data stays in RAM with a stale indicator and update timestamp; it is not retained across a reboot.
+
+## Data sources
+
+| Content | Source | Normal refresh |
+| --- | --- | --- |
+| Weather | [Open-Meteo](https://open-meteo.com/en/docs), CC BY 4.0, free noncommercial API | 15 minutes |
+| F1 | [Jolpica F1 / Ergast-compatible API](https://api.jolpi.ca/ergast/) | 60 minutes |
+| NFL | [ESPN public scoreboard endpoint](https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard) | 5 minutes |
+| Clock | `pool.ntp.org`, `time.google.com` | SNTP |
+
+ESPN's endpoint is publicly accessible but undocumented; it is not an open-source or guaranteed service. The ESPN adapter is isolated in `main/dashboard.cc` and `main/feeds.cc`. Requests have time and size limits. Empty schedules and unavailable results have explicit display states. Attribution appears on each page. Test fixtures capture provider data on September 5, 2026; they are test samples, not the running dashboard's data source.
+
+Weather coordinates, units, and endpoints are in `main/feeds.cc`. Eastern timezone rules are in `main/dashboard.h`.
+
+## Build
+
+Install and activate [ESP-IDF 5.4.4](https://docs.espressif.com/projects/esp-idf/en/v5.4.4/esp32s3/get-started/linux-macos-setup.html), then run:
+
+```sh
 idf.py set-target esp32s3
 idf.py build
-idf.py -p /dev/ttyACM0 flash monitor
+bash tools/test-host.sh
+idf.py merge-bin -o home-note4-merged.bin
 ```
 
-Replace `/dev/ttyACM0` with the board's serial port. Exit the monitor with
-`Ctrl+]`. The first configure/build downloads the official
-`espressif/esp_codec_dev` component.
+On the original development Mac, the ignored `tools/activate-local.sh` helper activates its local toolchain. On another computer, activate your own ESP-IDF installation as described above.
 
-See [docs/QUICK_START.md](docs/QUICK_START.md) for setup and troubleshooting.
-
-## Controls
-
-| Input | Action |
-| --- | --- |
-| UP press | Previous item |
-| DOWN press | Next item |
-| OK click | Select or confirm |
-| OK hold (1.5 s) | Return or cancel |
-| DOWN hold (3 s) | Clear display, power down peripherals and shut down |
-
-The home screen starts Auto Showcase after 15 seconds of inactivity. On
-battery power, shutdown releases the hardware power latch. While powered over
-USB, the board enters deep sleep after clearing the display.
-
-## UI map
-
-```text
-Splash
-  -> Home
-     |-- Auto Showcase
-     |    `-- 1bpp Full -> 1bpp Partial -> 4bpp Full
-     |-- Display Gallery
-     |    |-- Lighthouse / Full 1bpp
-     |    |-- Footprints / Partial 1bpp
-     |    |-- Mountain / Full 4bpp
-     |    `-- Run All Scenes
-     |-- Hardware Tests
-     |    |-- Run All Tests
-     |    `-- Select Individual
-     |         `-- Wi-Fi RF / Audio / RTC / Power / LED / Buttons / NFC
-     |-- Device Info
-     `-- About & License
+```sh
+source tools/activate-local.sh
+idf.py build
+bash tools/test-host.sh
 ```
 
-The 4bpp scene always performs a white 1bpp full refresh first to reduce
-ghosting. UI partial refreshes are periodically replaced by a full refresh to
-limit accumulated artifacts.
+`build/home_note4.bin` is an **application-only** image at offset `0x10000`. It must not be written to `0x0`.
 
-## Configuration
+`build/home-note4-merged.bin` includes the bootloader, partition table, and application. Its write offset is `0x0`. The merged image fills gaps, including the NVS region, with erased bytes, so installation replaces settings. The 3 MiB application partition has ample room for the approximately 1.1 MiB application.
 
-Open `idf.py menuconfig`, then select **Zectrix hardware showcase**:
+## Before first installation
 
-- `Optional Wi-Fi SSID for RF qualification`: empty means generic scan mode;
-  a configured SSID requires three consecutive qualifying observations.
-- `RF qualification threshold (dBm)`: default `-70`.
-- `Temporary NFC demonstration URL`: default `https://www.zectrix.com`.
+Confirm the black-and-white NOTE4 PCB v1.0 mapping, ESP32-S3 N16R8 memory, and the correct USB port. Do not use these images on NOTE4C or an unverified board revision.
 
-## Repository layout
+Read the device's security state and full flash before any write. Preserve a **16,777,216-byte** factory backup, then perform a second read and compare hashes. Do not infer that a backup guarantees factory recovery: the device's security configuration and the batch-specific recovery procedure must also be checked. The original development device has two matching 16 MiB backups of factory firmware 3.6.2 under the ignored `backups/` directory. Their checksum and original partition layout are recorded alongside them. Factory restoration has not been tested.
 
-```text
-components/zectrix_epd/       Public SSD2683 display driver
-components/zectrix_board/     Board pins and peripheral adapters
-components/zectrix_demo_ui/   Canvas, bitmap font and English UI
-components/zectrix_self_test/ Hardware test implementations
-main/assets/                  Embedded display assets
-tools/                        Asset and font conversion utilities
-docs/                         Integration and validation guides
-```
+After those checks, install the verified merged image using the matched serial port and esptool's syntax for the installed version. Do not use an erase-all command. Capture a 115200-baud serial log and validate:
 
-The public EPD interface is documented in
-[docs/EPD_API.md](docs/EPD_API.md). Hardware pins and tests are documented in
-[docs/HARDWARE.md](docs/HARDWARE.md) and
-[docs/TEST_CRITERIA.md](docs/TEST_CRITERIA.md).
+- USB boot and 8 MB PSRAM detection.
+- Readable English display and all three buttons.
+- Setup from a phone, invalid-password recovery, and successful Wi-Fi connection.
+- Clock sync, real weather, F1, and all NFL pages.
+- Wi-Fi reconnection and clear stale-data behavior.
+- Panel power off between refreshes and battery shutdown with USB disconnected.
 
-## Image asset formats
+## Scope of this first version
 
-- 1bpp: 400 x 300, row-major, MSB first, `0` black and `1` white; 15,000 bytes.
-- 4bpp: 400 x 300, two pixels per byte, left pixel in the high nibble,
-  `0` black and `15` white; 60,000 bytes.
+This is a USB desk dashboard. It uses Wi-Fi modem power saving and powers off the e-paper rail between full 1bpp refreshes, but it does not schedule automatic deep sleep. Battery endurance is unmeasured. No OTA update path is configured; subsequent firmware updates use USB. Audio and NFC are not application features in this version.
 
-Regenerate assets with:
+The board and display drivers retain the official upstream mapping and waveform. The application asserts the board power latch before networking, serializes display access on the main task, and uses a separate data-fetch task with protected snapshots. Full refreshes avoid partial-refresh state and ghosting complications during the first hardware tests.
 
-```bash
-python tools/prepare_1bpp.py input.png output.png output.bin
-python tools/prepare_4bpp.py input.png output.png output.bin
-python tools/generate_ascii_font.py --help
-```
+## Code map
 
-The footprint animation generator is documented in
-`tools/prepare_footprint_animation.py --help`.
+- `main/app_main.cc`: startup, screen updates, buttons, and shutdown.
+- `main/network.cc`, `main/setup.html`: Wi-Fi storage, local setup, SNTP, and bounded HTTPS.
+- `main/feeds.cc`: source URLs, polling, and snapshot synchronization.
+- `main/dashboard.cc`: response validation, score ordering, and timezone conversion.
+- `main/render.cc`: the 400 × 300 screen layout.
+- `tests/`: data, failure, timezone, credential, and rendering checks. Host tests use AddressSanitizer and UndefinedBehaviorSanitizer.
 
-## License
-
-Copyright (c) 2026 Zectrix Lab. Released under the [MIT License](LICENSE).
-Third-party notices are listed in
-[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
-Contributions are welcome; see [CONTRIBUTING.md](CONTRIBUTING.md).
-
-## Official links
-
-- [ZECTRIX NOTE4 product page](https://www.zectrix.com/en/note4.html)
-- [ZECTRIX Developer Wiki](https://wiki.zectrix.com/)
+Based on [itopinion/zectrix-note4-epd-demo](https://github.com/itopinion/zectrix-note4-epd-demo). Its MIT license and third-party notices remain in the repository. The original README is preserved in `docs/UPSTREAM_README.md`.
