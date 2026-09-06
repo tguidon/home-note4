@@ -24,7 +24,7 @@ public:
         zectrix_epd_config_t cfg; zectrix_epd_get_default_config(&cfg);
         ESP_ERROR_CHECK(zectrix_epd_new(&cfg, &epd_));
         ESP_ERROR_CHECK(display_.Init(epd_));
-        Message("Starting up", {"Weather for Wilton, CT 06897", "Formula 1 and NFL", "Connecting to your home..."});
+        Message("Starting up", {"Weather and your calendar", "US Open, Formula 1 and NFL", "Connecting to your home..."});
         auto err = home::InitNetwork();
         if (err != ESP_OK) {
             Message("Storage needs attention", {"Settings could not be read.", "Nothing has been erased.", "Check the USB serial log."});
@@ -50,6 +50,7 @@ public:
             if (led_until_ && tick >= led_until_) { board_.SetPowerLed(false); led_until_ = 0; }
             const time_t now = time(nullptr);
             const int day = home::LocalDateKey(now);
+            if (day != shown_day) detail_page_ = 0;
             if (home::FeedRevision() != revision) {
                 auto next = home::Snapshot();
                 if (section_ == 2 && (next.f1.latest.session.round_id != data.f1.latest.session.round_id ||
@@ -159,7 +160,7 @@ private:
         Message("Let's get connected", {"1. Join Wi-Fi: " + info.ssid,
             "   Password: " + info.password,
             "2. Open http://192.168.4.1",
-            "3. Enter your home 2.4 GHz Wi-Fi.",
+            "3. Save Wi-Fi and calendar settings.",
             "Keep this screen's password private.", "Hold DOWN to power off."});
         while (true) {
             ZectrixButtonEvent event;

@@ -10,5 +10,7 @@ bool WifiConnected();
 esp_err_t StartSetup(SetupInfo& info);
 void SetupOnNextBoot();
 bool FetchJson(const char* url, std::string& body, size_t max_bytes = 768 * 1024);
+std::string CalendarUrl();
+bool FetchCalendar(const std::string& url, std::string& body);
 void StartClock();
 }

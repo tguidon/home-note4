@@ -23,7 +23,10 @@ void Publish(Dashboard& d) {
 }
 void Run(void*) {
     Dashboard d;
-    int64_t weather_due = 0, f1_due = 0, nfl_due = 0, tennis_due = 0, last_manual = -60000000;
+    const std::string calendar_url = CalendarUrl();
+    d.calendar.configured = !calendar_url.empty();
+    Publish(d);
+    int64_t weather_due = 0, f1_due = 0, nfl_due = 0, tennis_due = 0, calendar_due = 0, last_manual = -60000000;
     int requested_day = 0;
     // Allocate once before HTTP traffic fragments PSRAM. A growing response
     // string otherwise leaves no contiguous block for the tournament tokens.
@@ -32,11 +35,11 @@ void Run(void*) {
     while (true) {
         auto tick = esp_timer_get_time(); time_t now = time(nullptr);
         bool manual = refresh.exchange(false) && tick - last_manual >= 60000000;
-        if (manual) { weather_due = f1_due = nfl_due = tennis_due = 0; last_manual = tick; }
+        if (manual) { weather_due = f1_due = nfl_due = tennis_due = calendar_due = 0; last_manual = tick; }
         if (WifiConnected() && now >= 1767225600) {
             const int day = LocalDateKey(now);
-            if (day != requested_day) { tennis_due = f1_due = 0; requested_day = day; }
-            if (tick >= weather_due || tick >= f1_due || tick >= nfl_due || tick >= tennis_due) {
+            if (day != requested_day) { tennis_due = f1_due = calendar_due = 0; requested_day = day; }
+            if (tick >= weather_due || tick >= f1_due || tick >= nfl_due || tick >= tennis_due || (!calendar_url.empty() && tick >= calendar_due)) {
                 d.refreshing = true; Publish(d);
             }
             if (tick >= weather_due) {
@@ -44,6 +47,14 @@ void Run(void*) {
                 d.weather_error = !ok; if (ok) d.weather_updated = time(nullptr);
                 weather_due = tick + (ok ? 900LL : 60LL) * 1000000;
                 ESP_LOGI("feeds", "weather: %s", ok ? "updated" : "unavailable"); Publish(d);
+            }
+            if (!calendar_url.empty() && tick >= calendar_due) {
+                const bool ok = FetchCalendar(calendar_url, body) && ParseCalendar(body, time(nullptr), d.calendar);
+                d.calendar.error = !ok;
+                calendar_due = esp_timer_get_time() + 300LL * 1000000;
+                // Neither titles nor the URL belong in the serial log.
+                ESP_LOGI("feeds", "calendar: %s, skipped=%u", ok ? "updated" : "unavailable", d.calendar.skipped);
+                Publish(d);
             }
             if (tick >= f1_due) {
                 RefreshFormulaOne(d.f1, time(nullptr), body, [](const char* url, std::string& response) {

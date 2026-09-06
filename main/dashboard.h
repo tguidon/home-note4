@@ -1,5 +1,6 @@
 #pragma once
 #include "tennis.h"
+#include "calendar.h"
 #include "formula_one.h"
 #include <ctime>
 #include <string>
@@ -22,6 +23,7 @@ struct Football {
     std::vector<Game> games;
 };
 struct Dashboard {
+    Calendar calendar;
     Weather weather;
     FormulaOne f1;
     Football nfl;

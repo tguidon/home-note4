@@ -1,4 +1,64 @@
-<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Home Note4 · Wi-Fi setup</title>
-<style>body{font:17px system-ui;background:#f3f0e9;color:#202922;margin:0;padding:30px 20px}main{max-width:420px;margin:5vh auto;background:#fff;padding:28px;border-radius:20px}h1{margin:8px 0}p{line-height:1.5;color:#58635c}label{display:block;margin:24px 0 7px;font-weight:650}input,button{font:inherit;box-sizing:border-box;width:100%;padding:14px;border:1px solid #b6c1b9;border-radius:9px}button{margin-top:24px;background:#245f46;color:white;cursor:pointer}small{color:#58635c}#status{white-space:pre-wrap}button:disabled{opacity:.5}</style>
-<main><small>YOUR HOME, AT A GLANCE</small><h1>Home Note4</h1><p>Connect to your <b>2.4 GHz Wi-Fi</b>. Your network details stay on this device.</p><form id="setup"><label for="ssid">Network name</label><input id="ssid" name="ssid" required maxlength="32" autocomplete="off"><label for="password">Wi-Fi password</label><input id="password" name="password" type="password" maxlength="63" autocomplete="off"><p><small>Leave blank only for an open network.</small></p><button id="save">Save and connect</button></form><p id="status" role="status"></p><small>Wilton, CT 06897 · Weather · F1 · NFL<br>No account required.</small></main>
-<script>document.querySelector('#setup').addEventListener('submit',async e=>{e.preventDefault();const b=document.querySelector('#save'),s=document.querySelector('#status');b.disabled=true;s.textContent='Saving…';try{const r=await fetch('/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ssid:document.querySelector('#ssid').value,password:document.querySelector('#password').value,token:'__TOKEN__'})});s.textContent=await r.text();if(!r.ok)b.disabled=false;else document.querySelector('#password').value=''}catch(err){s.textContent='Connection lost. Check the NOTE4 screen; if it has not restarted, reconnect to its setup Wi-Fi and try again.';b.disabled=false}});</script></html>
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>Home Note4 · Setup</title>
+<style>
+*{box-sizing:border-box}body{font:16px system-ui;background:#f3f0e9;color:#202922;margin:0;padding:24px 16px}main{max-width:460px;margin:12px auto;background:#fff;padding:26px;border-radius:20px}h1{margin:8px 0;font-size:30px}h2{font-size:19px;margin:0 0 8px}p{line-height:1.5;color:#58635c}section{border-top:1px solid #dce2dc;margin-top:26px;padding-top:24px}label{display:block;margin:18px 0 7px;font-weight:650}input,select,button{font:inherit;box-sizing:border-box;width:100%;padding:13px;border:1px solid #b6c1b9;border-radius:9px}button{margin-top:26px;background:#245f46;color:white;cursor:pointer;font-weight:650}small{color:#58635c;line-height:1.5}#status{white-space:pre-wrap}button:disabled{opacity:.5}[hidden]{display:none!important}.hint{font-size:14px;margin:10px 0 0}.eyebrow{font-size:11px;letter-spacing:1.7px}.badge{color:#245f46;font-weight:600;font-size:14px}
+</style>
+<main>
+<small class="eyebrow">YOUR HOME, AT A GLANCE</small>
+<h1>Home Note4</h1>
+<p>Set up your home screen. These settings are saved directly on your NOTE4.</p>
+<form id="setup">
+<section>
+<h2>Home Wi-Fi</h2>
+<p id="wifi-status" class="badge"></p>
+<label for="wifi-action">Connection</label>
+<select id="wifi-action"><option value="keep">Keep saved Wi-Fi</option><option value="replace">Set up a Wi-Fi network</option></select>
+<div id="wifi-fields">
+<label for="ssid">Network name</label><input id="ssid" name="ssid" maxlength="32" autocomplete="off" autocapitalize="none" spellcheck="false">
+<label for="password">Wi-Fi password</label><input id="password" name="password" type="password" maxlength="63" autocomplete="off">
+<p class="hint">Use your 2.4 GHz network. Leave the password blank only for an open network.</p>
+</div>
+</section>
+<section>
+<h2>Google Calendar</h2>
+<p>Events appear below the weather. When today is empty, you'll see what's next.</p>
+<p id="calendar-status" class="badge"></p>
+<label for="calendar-action">Calendar</label>
+<select id="calendar-action"><option value="keep">Keep current calendar setting</option><option value="replace">Add or replace a calendar</option><option value="remove">Remove calendar from this device</option></select>
+<div id="calendar-fields">
+<label for="calendar-url">Secret iCal link</label>
+<input id="calendar-url" name="calendar_url" type="password" maxlength="1024" autocomplete="off" autocapitalize="none" spellcheck="false" aria-describedby="calendar-help">
+<p id="calendar-help" class="hint">In Google Calendar settings, choose your calendar → Integrate calendar → <b>Secret address in iCal format</b>. Copy it before joining the NOTE4 Wi-Fi, then paste it here.</p>
+<p class="hint">Your calendar stays private. This link gives read-only access to its events, so treat it like a password. Your NOTE4 connects directly to Google; no Google password is needed.</p>
+</div>
+<p id="remove-help" class="hint" hidden>This removes the link and the device's cached agenda after restart. It does not delete events from Google Calendar.</p>
+</section>
+<button id="save">Save and restart</button>
+</form>
+<p id="status" role="status" aria-live="polite"></p>
+<small>Wilton, CT · Weather · Calendar · US Open · F1 · NFL</small>
+</main>
+<script>
+const $=s=>document.querySelector(s);
+const hasWifi=__HAS_WIFI__,hasCalendar=__HAS_CALENDAR__;
+$('#wifi-status').textContent=hasWifi?'Wi-Fi is saved. No need to enter it again.':'No Wi-Fi network saved yet.';
+$('#calendar-status').textContent=hasCalendar?'A private calendar link is saved.':'Optional · No calendar connected.';
+$('#wifi-action').value=hasWifi?'keep':'replace';
+$('#wifi-action').options[0].disabled=!hasWifi;
+$('#calendar-action').options[0].textContent=hasCalendar?'Keep saved calendar':'Leave calendar off';
+function fields(){const wifi=$('#wifi-action').value==='replace',cal=$('#calendar-action').value==='replace';$('#wifi-fields').hidden=!wifi;$('#ssid').required=wifi;$('#calendar-fields').hidden=!cal;$('#calendar-url').required=cal;$('#remove-help').hidden=$('#calendar-action').value!=='remove'}
+$('#wifi-action').addEventListener('change',fields);$('#calendar-action').addEventListener('change',fields);fields();
+$('#setup').addEventListener('submit',async e=>{
+ e.preventDefault();const button=$('#save'),status=$('#status');button.disabled=true;status.textContent='Saving…';
+ try{
+  const response=await fetch('/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:'__TOKEN__',wifi_action:$('#wifi-action').value,ssid:$('#ssid').value,password:$('#password').value,calendar_action:$('#calendar-action').value,calendar_url:$('#calendar-url').value.trim()})});
+  status.textContent=await response.text();
+  if(!response.ok)button.disabled=false;else{$('#password').value='';$('#calendar-url').value=''}
+ }catch(error){status.textContent='Connection lost. Check the NOTE4 screen. If it has not restarted, reconnect to its setup Wi-Fi and try again.';button.disabled=false}
+});
+</script>
+</html>

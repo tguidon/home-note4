@@ -1,6 +1,6 @@
 # Home Note4
 
-An English dashboard for the monochrome ZECTRIX NOTE4, with weather for Wilton, Connecticut (06897), the date, US Open tennis, Formula 1, and NFL scores. It runs directly on the ESP32-S3. No WeChat, ZECTRIX account, API key, or Mac server is required.
+An English dashboard for the monochrome ZECTRIX NOTE4, with weather for Wilton, Connecticut (06897), the date, an optional private Google Calendar agenda, US Open tennis, Formula 1, and NFL scores. It runs directly on the ESP32-S3. No WeChat, ZECTRIX account, API key, or Mac server is required.
 
 ## Current status
 
@@ -13,17 +13,19 @@ The firmware builds with ESP-IDF **5.4.4** for **ESP32-S3, 16 MB flash, 8 MB oct
 
 **Version 0.3.0 device verification:** the F1 feed loaded all 22 Monza qualifying positions with the Italian Grand Prix on September 6 at 09:00 EDT as its anchor. All six classification pages and wraparound were exercised through USB. Thirteen display updates returned ESP_OK in 1,295–1,320 ms. Weather, 16 NFL games, and 40 US Open matches also loaded. All 15 previously exported battery readings survived; 17 are now available. Host sanitizer tests cover all seven session types, missing/malformed feeds, race-day retention, Eastern midnight rollover, and cold starts. Screens were checked using previews from the firmware renderer; physical inspection of this F1 update remains an owner check.
 
+**Version 0.4.0 device verification:** the application-only flash passed hash verification and booted as 0.4.0 on the same ESP32-S3 with 8 MB PSRAM. Saved Wi-Fi reconnected; weather, F1 (22 drivers), NFL (16 games), and US Open (40 matches) loaded. Nine display updates returned ESP_OK in 1,294–1,318 ms; USB navigation returned to the new home screen. All 20 pre-update battery records survived; 23 were exported afterward. Calendar/settings sanitizer tests and a local browser save test passed with invented data. The owner's secret link has not been entered, so a real private calendar fetch and the new setup form on the physical device remain owner checks. The factory backup remains available; restoration has not been tested.
+
 ## How it runs
 
 The firmware is the application. C++ source, the hardware drivers, and ESP-IDF are compiled into native ESP32-S3 machine code. USB flashing writes this binary into the device's nonvolatile flash memory. At startup, the bootloader loads the application and starts its FreeRTOS tasks.
 
-The main task handles buttons and renders cached pages. A dedicated display worker refreshes the panel without blocking input. A background task fetches JSON directly from the weather and sports APIs over HTTPS. It validates each response and shares a snapshot with the display task. The device stores Wi-Fi settings separately in NVS, so no password is compiled into the application. During setup, the NOTE4 itself serves the small web page used to enter those settings.
+The main task handles buttons and renders cached pages. A dedicated display worker refreshes the panel without blocking input. A background task fetches JSON from the weather and sports APIs and iCalendar data directly from Google over HTTPS. It validates each response and shares a snapshot with the display task. The device stores Wi-Fi settings separately in NVS, so no password is compiled into the application. During setup, the NOTE4 itself serves the small web page used to enter those settings.
 
 Once configured, it operates without a computer. Code changes require a new build and USB flash; this version does not implement wireless firmware updates.
 
 ## Pages and controls
 
-- Weather: temperature, conditions, feels-like temperature, daily high and low, wind, and rain probability for Wilton.
+- Home: Wilton weather above your calendar. The agenda shows every event overlapping today, including all-day and overnight events. When today is empty, it shows upcoming events within 90 days. Three events fit per page; OK pages through the list. Weather stays visible on each agenda page. Times use Eastern time. Past appointments stay visible for the rest of their day and are marked Ended.
 - US Open: today's singles and doubles, three matches per page. Live matches come first, then scheduled matches and results. Set scores appear beside each player/team; an asterisk marks the winner. MS/WS mean men's/women's singles; MD/WD mean men's/women's doubles; XD means mixed doubles.
 - F1: the main Grand Prix name and start time stay at the top of every page. The latest published practice, sprint qualifying, sprint race, qualifying, or race classification appears below, four drivers per page. OK pages through every driver. Positions and times come from the provider; qualifying order can differ from the final starting grid after penalties.
 - NFL: four games per page, with live games first, upcoming games next, and completed games last. Scheduled games show local dates and times, not 0–0 scores.
@@ -32,9 +34,9 @@ Once configured, it operates without a computer. Code changes require a new buil
 
 | Button | Action |
 | --- | --- |
-| Side UP / DOWN | Switch sections: Weather → US Open → F1 → NFL |
-| Front OK | Next results/match page within a sport; request a refresh on single-page sections, limited to once per minute |
-| Hold front OK about 1.5 seconds | Restart into Wi-Fi setup |
+| Side UP / DOWN | Switch sections: Home → US Open → F1 → NFL |
+| Front OK | Next agenda/results/match page; request a refresh on single-page sections, limited to once per minute |
+| Hold front OK about 1.5 seconds | Restart into Wi-Fi and calendar setup |
 | Hold side DOWN about 3 seconds | Shut down; USB can keep the power rail energized |
 
 Navigation acknowledges taps with a 120 ms LED pulse. There is no three-second artificial redraw delay. The display worker has one pending frame: rapid taps replace obsolete frames rather than replaying every intermediate screen. Page changes use cached RAM data and never wait for HTTP. Empty pages show a loading state; cached pages keep their contents while feeds update. The e-paper waveform still takes time, so a page change cannot be instantaneous like an LCD. Full 1bpp refreshes keep text clean; panel power is removed after each refresh.
@@ -51,26 +53,46 @@ F1 waits for published classifications and keeps the prior session while newer r
 2. Read the temporary `HomeNote4-XXXX` network name and its random password on the display.
 3. Join that network from a phone or computer. Stay connected if it reports no internet.
 4. Open **http://192.168.4.1** in a browser.
-5. Enter your home **2.4 GHz** network name and password, then choose **Save and connect**.
+5. Select **Set up a Wi-Fi network**, enter your home **2.4 GHz** network name and password, then choose **Save and restart**.
 6. Reconnect the phone or computer to your home network. The NOTE4 restarts, joins Wi-Fi, sets its clock, and loads the dashboard.
 
 Setup accepts WPA2/WPA3 personal networks with an 8–63 byte password, or open networks with a blank password. Enterprise Wi-Fi and networks that require a browser login are not supported. If connection fails after 30 seconds, the setup screen returns with a new temporary password. Holding OK later also returns to setup.
 
-Network details are saved in the device's local `home_note` NVS namespace. They are not embedded in the firmware or logged. This build does not enable flash encryption. Keep flash backups private because they may contain credentials. The setup server runs only in AP setup mode, behind its random WPA2 password; a per-session form token protects saving.
+Network details and the optional calendar link are saved in the device's local `home_note` NVS namespace. A versioned settings value keeps them together; existing Wi-Fi settings migrate when settings are next saved. They are not embedded in the firmware or logged. This build does not enable flash encryption. Keep flash backups private because they may contain credentials. The setup server runs only in AP setup mode, behind its random WPA2 password; a per-session form token protects saving.
 
 Internet access to NTP and the data providers is required. HTTPS certificate validation remains enabled. If the clock cannot synchronize, data requests wait. If a provider fails, the last successful data stays in RAM with a stale indicator and update timestamp; it is not retained across a reboot.
+
+## Add a private Google Calendar
+
+1. Copy the calendar's **Secret address in iCal format** while your phone still has internet access. In Google Calendar settings, select the calendar, then **Integrate calendar**. Google may require its desktop website to expose this setting. Do not use the public address or enable public sharing. [Google's instructions](https://support.google.com/calendar/answer/37648?hl=en).
+2. Hold the NOTE4's front OK button for about 1.5 seconds to enter setup.
+3. On your phone, join the temporary `HomeNote4-XXXX` Wi-Fi using the password shown on the NOTE4. Stay connected despite the no-internet notice.
+4. Open **http://192.168.4.1**. Keep **Keep saved Wi-Fi** selected.
+5. Under Calendar, choose **Add or replace a calendar**, paste the secret link, and tap **Save and restart**.
+6. Return your phone to home Wi-Fi. The NOTE4 reconnects, synchronizes its clock, and fetches your events.
+
+The calendar stays private and read-only. Anyone with the secret link can read it. Enter the link directly into the device's setup page; keep it out of chat, Git, screenshots, and logs. The page contains no third-party scripts or assets and never sends the saved link back to the browser. The link travels to the local device over its password-protected setup Wi-Fi and is used only for a certificate-verified HTTPS request to `calendar.google.com`. It is stored in NVS, not the firmware image. Physical flash access can read it because this device does not enable flash encryption.
+
+To change calendars or remove the link, repeat setup and select the relevant Calendar option. Removing it clears the RAM agenda on restart and does not change Google events. **Keep current calendar setting** preserves the link when you change Wi-Fi. Saving a new link checks its private Google URL format; the device fetches and validates the feed after restarting. A revoked or inaccessible link shows an unavailable state and retries.
+
+Calendar requests run every five minutes and after local midnight. Feed failures keep the last valid RAM agenda with a stale indicator. Events are expanded for 90 days; an expired offline cache asks you to reconnect. Event data is not written to flash or retained after a reboot. Google controls when an edited event appears in its feed, so polling does not guarantee immediate updates.
+
+The bounded iCalendar parser supports ordinary daily, weekly, monthly, and yearly rules; intervals and counts; UNTIL, BYDAY, BYMONTH, BYMONTHDAY, BYSETPOS, and WKST; all-day events; EXDATE/RDATE; and moved/cancelled single instances. It handles UTC, floating Eastern times, and embedded VTIMEZONE observances with annual rules or explicit transition dates. Tests cover US and European DST changes. Recurrence follows [RFC 5545](https://www.rfc-editor.org/rfc/rfc5545.html).
+
+This is not a complete RFC implementation. Sub-daily rules, EXRULE, RANGE=THISANDFUTURE, unknown time zones, and other unsupported event forms produce a visible warning rather than an empty-calendar claim. Large calendars are bounded at 3 MiB, 2,000 event components, 1,024 displayed occurrences, and a shared recurrence work budget. Structural or download-limit failures preserve the previous agenda; unsupported events are omitted with a warning. Check Google Calendar if the warning appears. Tests use invented appointments and a fake secret URL; no personal calendar is checked into this repository.
 
 ## Data sources
 
 | Content | Source | Normal refresh |
 | --- | --- | --- |
+| Calendar | Your private Google Calendar iCal feed | 5 minutes, plus each new local day |
 | Weather | [Open-Meteo](https://open-meteo.com/en/docs), CC BY 4.0, free noncommercial API | 15 minutes |
 | F1 | [Jolpica F1 alpha schedules/results API](https://api.jolpi.ca/docs/) | Results: 5 minutes; schedule: 1 hour; also checks each new local day |
 | US Open | [ESPN public tennis scoreboard](https://site.api.espn.com/apis/site/v2/sports/tennis/atp/scoreboard) (includes singles and doubles for both men and women) | 5 minutes during the event; 6 hours off-season, plus each new local day |
 | NFL | [ESPN public scoreboard endpoint](https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard) | 5 minutes |
 | Clock | `pool.ntp.org`, `time.google.com` | SNTP |
 
-ESPN's endpoint is publicly accessible but undocumented; it is not an open-source or guaranteed service. The ESPN adapters are in `main/dashboard.cc`, `main/tennis.cc`, and `main/feeds.cc`. ESPN rejects the prior custom User-Agent; requests now use a tested standard-library compatibility header. The tennis endpoint returns the full tournament despite its date parameter, so a bounded token parser reads one match at a time rather than allocating a full JSON tree. A reusable download buffer is allocated at startup to keep a contiguous parser allocation available in PSRAM. Tennis responses are capped at 3 MiB and 200,000 tokens; other feeds retain the 768 KiB limit. Requests have time and size limits. Empty schedules and unavailable results have explicit display states. Attribution appears on each page. Test fixtures capture provider data on September 5, 2026; they are test samples, not the running dashboard's data source.
+ESPN's endpoint is publicly accessible but undocumented; it is not an open-source or guaranteed service. The ESPN adapters are in `main/dashboard.cc`, `main/tennis.cc`, and `main/feeds.cc`. ESPN rejects the prior custom User-Agent; requests now use a tested standard-library compatibility header. The tennis endpoint returns the full tournament despite its date parameter, so a bounded token parser reads one match at a time rather than allocating a full JSON tree. A reusable download buffer is allocated at startup to keep a contiguous parser allocation available in PSRAM. Tennis responses are capped at 3 MiB and 200,000 tokens; calendar responses also have a 3 MiB limit; other feeds retain the 768 KiB limit. Requests have time and size limits. Empty schedules and unavailable results have explicit display states. Attribution appears on each page. Test fixtures capture provider data on September 5, 2026; they are test samples, not the running dashboard's data source.
 
 Weather coordinates, units, and endpoints are in `main/feeds.cc`. Eastern timezone rules are in `main/dashboard.h`.
 
@@ -125,6 +147,8 @@ The board and display drivers retain the official upstream mapping and waveform.
 - `main/feeds.cc`: source URLs, polling, and snapshot synchronization.
 - `main/dashboard.cc`: response validation, score ordering, and timezone conversion.
 - `main/render.cc`: the 400 × 300 screen layout and section/page mapping.
+- `main/calendar.cc`, `main/calendar_rules.cc`: bounded iCalendar parsing, recurrence expansion, timezone conversion, and agenda selection.
+- `main/settings.cc`: private URL validation and setup changes that preserve existing settings.
 - `main/tennis.cc`: bounded tournament parsing and event lifecycle.
 - `main/formula_one.cc`: session classifications, schedule validation, race-day anchors, and bounded result lookup.
 - `main/display_worker.cc`: asynchronous panel access and pending-frame replacement.
