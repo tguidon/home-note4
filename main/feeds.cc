@@ -15,8 +15,6 @@ Dashboard shared;
 std::atomic<bool> refresh{false};
 std::atomic<unsigned> published_revision{0};
 constexpr const char* kWeather = "https://api.open-meteo.com/v1/forecast?latitude=41.2018&longitude=-73.4383&current=temperature_2m,apparent_temperature,weather_code,wind_speed_10m&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max&temperature_unit=fahrenheit&wind_speed_unit=mph&timezone=America%2FNew_York&forecast_days=1";
-constexpr const char* kNext = "https://api.jolpi.ca/ergast/f1/current/next.json";
-constexpr const char* kLast = "https://api.jolpi.ca/ergast/f1/current/last/results.json?limit=3";
 constexpr const char* kNfl = "https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard?limit=100";
 void Publish(Dashboard& d) {
     ++d.revision;
@@ -37,7 +35,7 @@ void Run(void*) {
         if (manual) { weather_due = f1_due = nfl_due = tennis_due = 0; last_manual = tick; }
         if (WifiConnected() && now >= 1767225600) {
             const int day = LocalDateKey(now);
-            if (day != requested_day) { tennis_due = 0; requested_day = day; }
+            if (day != requested_day) { tennis_due = f1_due = 0; requested_day = day; }
             if (tick >= weather_due || tick >= f1_due || tick >= nfl_due || tick >= tennis_due) {
                 d.refreshing = true; Publish(d);
             }
@@ -48,12 +46,16 @@ void Run(void*) {
                 ESP_LOGI("feeds", "weather: %s", ok ? "updated" : "unavailable"); Publish(d);
             }
             if (tick >= f1_due) {
-                bool next = FetchJson(kNext, body) && ParseNextRace(body, d.f1);
-                d.next_error = !next; if (next) d.next_updated = time(nullptr);
-                bool last = FetchJson(kLast, body) && ParseLastRace(body, d.f1);
-                d.last_error = !last; if (last) d.last_updated = time(nullptr);
-                f1_due = tick + (next && last ? 3600LL : 300LL) * 1000000;
-                ESP_LOGI("feeds", "F1 next/results: %s/%s", next ? "updated" : "unavailable", last ? "updated" : "unavailable"); Publish(d);
+                RefreshFormulaOne(d.f1, time(nullptr), body, [](const char* url, std::string& response) {
+                    return FetchJson(url, response);
+                });
+                f1_due = esp_timer_get_time() + 300LL * 1000000;
+                const auto* anchor = F1Anchor(d.f1, time(nullptr));
+                ESP_LOGI("feeds", "F1: %s | race=%s %s | latest=%s %s (%u drivers) | pending=%s",
+                         d.f1.error ? "retrying" : "updated", anchor ? anchor->grand_prix.c_str() : "TBA",
+                         anchor ? anchor->timestamp.c_str() : "", d.f1.latest.session.grand_prix.c_str(),
+                         d.f1.latest.session.code.c_str(), unsigned(d.f1.latest.rows.size()), d.f1.pending.c_str());
+                Publish(d);
             }
             if (tick >= nfl_due) {
                 bool ok = FetchJson(kNfl, body) && ParseFootball(body, d.nfl);

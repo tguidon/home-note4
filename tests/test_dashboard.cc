@@ -21,16 +21,6 @@ int main(int argc, char** argv) {
     assert(d.weather.valid && d.weather.temperature == 74.0);
     assert(!home::ParseWeather("{}", d.weather) && d.weather.temperature == 74.0);
     assert(!home::ParseWeather(R"({"current":{"temperature_2m":null}})", d.weather));
-    assert(home::ParseNextRace(Load("f1-next"), d.f1));
-    assert(home::ParseLastRace(Load("f1-last"), d.f1));
-    assert(!d.f1.next.name.empty() && !d.f1.podium[0].empty());
-    auto saved_name = d.f1.next.name;
-    assert(!home::ParseNextRace("<html>error</html>", d.f1));
-    assert(d.f1.next.name == saved_name);
-    home::FormulaOne empty;
-    assert(home::ParseNextRace(R"({"MRData":{"RaceTable":{"Races":[]}}})", empty));
-    assert(empty.next_valid && empty.next.name.empty());
-    assert(!home::ParseLastRace(R"({"MRData":{"RaceTable":{"Races":[{}]}}})", empty));
     assert(home::ParseFootball(Load("nfl"), d.nfl));
     assert(d.nfl.valid && !d.nfl.games.empty());
     auto n = d.nfl.games.size();
@@ -97,7 +87,7 @@ int main(int argc, char** argv) {
     }
     if (argc > 1) {
         auto now = static_cast<time_t>(1788645600);
-        d.weather_updated = d.next_updated = d.last_updated = d.nfl_updated = d.tennis_updated = now;
+        d.weather_updated = d.nfl_updated = d.tennis_updated = now;
         ZectrixCanvas c;
         for(int page=0; page<home::PageCount(d); ++page) {
             home::RenderDashboard(c,d,page,now,true,87);

@@ -51,7 +51,10 @@ public:
             const time_t now = time(nullptr);
             const int day = home::LocalDateKey(now);
             if (home::FeedRevision() != revision) {
-                data = home::Snapshot(); revision = data.revision; redraw = true;
+                auto next = home::Snapshot();
+                if (section_ == 2 && (next.f1.latest.session.round_id != data.f1.latest.session.round_id ||
+                                     next.f1.latest.session.code != data.f1.latest.session.code)) detail_page_ = 0;
+                data = std::move(next); revision = data.revision; redraw = true;
             }
             if (online != home::WifiConnected() || day != shown_day || now / 300 != shown_interval) redraw = true;
             if (home::TennisEnded(data.tennis, now)) data.tennis.matches.clear();

@@ -9,8 +9,11 @@ The firmware builds with ESP-IDF **5.4.4** for **ESP32-S3, 16 MB flash, 8 MB oct
 **Installed on September 5, 2026.** The purchased NOTE4 DevKit documentation, factory board identifier, and USB chip information match the v1.0 N16R8 profile. Two full factory reads match byte for byte. Flash verification, dashboard boot, 8 MB PSRAM testing, RTC/NFC initialization, display-driver calls, and setup AP startup passed. The owner confirmed that the dashboard works after Wi-Fi setup. This confirms the normal setup and display path; invalid-password recovery, prolonged reconnection tests, and battery endurance remain unverified. Local installation records are in the ignored `dist/` and `backups/` directories.
 
 **Version 0.2.0 device verification:** two consecutive US Open fetches each parsed 40 matches; NFL loaded 16 upcoming games. Eleven full-frame updates completed successfully in 1,292–1,318 ms. Rapid navigation and paging were exercised through the local USB commands that use the button action handler. Wi-Fi reconnected and all six previously exported battery records survived; the log now contains 15 records. Visual inspection of this updated screen and physical button timing remain owner checks. The factory backup remains available.
-+
-+## How it runs
+
+
+**Version 0.3.0 device verification:** the F1 feed loaded all 22 Monza qualifying positions with the Italian Grand Prix on September 6 at 09:00 EDT as its anchor. All six classification pages and wraparound were exercised through USB. Thirteen display updates returned ESP_OK in 1,295–1,320 ms. Weather, 16 NFL games, and 40 US Open matches also loaded. All 15 previously exported battery readings survived; 17 are now available. Host sanitizer tests cover all seven session types, missing/malformed feeds, race-day retention, Eastern midnight rollover, and cold starts. Screens were checked using previews from the firmware renderer; physical inspection of this F1 update remains an owner check.
+
+## How it runs
 
 The firmware is the application. C++ source, the hardware drivers, and ESP-IDF are compiled into native ESP32-S3 machine code. USB flashing writes this binary into the device's nonvolatile flash memory. At startup, the bootloader loads the application and starts its FreeRTOS tasks.
 
@@ -22,7 +25,7 @@ Once configured, it operates without a computer. Code changes require a new buil
 
 - Weather: temperature, conditions, feels-like temperature, daily high and low, wind, and rain probability for Wilton.
 - US Open: today's singles and doubles, three matches per page. Live matches come first, then scheduled matches and results. Set scores appear beside each player/team; an asterisk marks the winner. MS/WS mean men's/women's singles; MD/WD mean men's/women's doubles; XD means mixed doubles.
-- F1: the next race in Eastern time, plus the latest race's top three finishers. This is a schedule/results feed, not live timing.
+- F1: the main Grand Prix name and start time stay at the top of every page. The latest published practice, sprint qualifying, sprint race, qualifying, or race classification appears below, four drivers per page. OK pages through every driver. Positions and times come from the provider; qualifying order can differ from the final starting grid after penalties.
 - NFL: four games per page, with live games first, upcoming games next, and completed games last. Scheduled games show local dates and times, not 0–0 scores.
 - The date follows Eastern time, including daylight-saving changes.
 - Battery percentage appears beside ONLINE/OFFLINE on every dashboard page. It uses the official board driver's voltage-based estimate and updates with each screen redraw. `--%` means the battery reading is unavailable; charging and load can affect the estimate.
@@ -30,13 +33,17 @@ Once configured, it operates without a computer. Code changes require a new buil
 | Button | Action |
 | --- | --- |
 | Side UP / DOWN | Switch sections: Weather → US Open → F1 → NFL |
-| Front OK | Next match page within a sport; request a refresh on single-page sections, limited to once per minute |
+| Front OK | Next results/match page within a sport; request a refresh on single-page sections, limited to once per minute |
 | Hold front OK about 1.5 seconds | Restart into Wi-Fi setup |
 | Hold side DOWN about 3 seconds | Shut down; USB can keep the power rail energized |
 
 Navigation acknowledges taps with a 120 ms LED pulse. There is no three-second artificial redraw delay. The display worker has one pending frame: rapid taps replace obsolete frames rather than replaying every intermediate screen. Page changes use cached RAM data and never wait for HTTP. Empty pages show a loading state; cached pages keep their contents while feeds update. The e-paper waveform still takes time, so a page change cannot be instantaneous like an LCD. Full 1bpp refreshes keep text clean; panel power is removed after each refresh.
 
 The tennis query follows the New York calendar day, including a still-live match that crosses midnight. After the tournament's published end time, its page becomes **US Open is over**, with Weather/F1/NFL still available on Up/Down. A valid empty schedule is distinct from a failed request. Cached dates and stale live states are labelled explicitly. The feed's event dates drive the transition; the published 2026 end date is also a fallback after an off-season reboot. Future event dates come from the feed, not a guessed annual schedule.
+
+The F1 race anchor follows the New York calendar day. It shows the main race throughout race day, even after the start or finish. At midnight Eastern, it advances to the next scheduled Grand Prix. The latest results keep their own Grand Prix name and session date below that anchor, so last weekend's results are not confused with the next race. This uses actual race timestamps, including Saturday races and daylight-saving changes. A new session result returns the F1 section to its first page.
+
+F1 waits for published classifications and keeps the prior session while newer results are missing. It checks at most eight recent sessions during a cold-start lookup. Failed requests preserve cached data with a stale indicator. The provider's alpha endpoint has no completion/finality flag or guaranteed publication delay: these are published results, not live timing or a certified final grid. Schedules and results are validated separately. The next season is checked after the last scheduled race; before the first session of a new year, the prior season is checked for results. An unavailable future calendar shows “Next race schedule pending.” The date-based anchor also advances from cached schedule data while offline.
 
 ## Wi-Fi setup after installation
 
@@ -58,7 +65,7 @@ Internet access to NTP and the data providers is required. HTTPS certificate val
 | Content | Source | Normal refresh |
 | --- | --- | --- |
 | Weather | [Open-Meteo](https://open-meteo.com/en/docs), CC BY 4.0, free noncommercial API | 15 minutes |
-| F1 | [Jolpica F1 / Ergast-compatible API](https://api.jolpi.ca/ergast/) | 60 minutes |
+| F1 | [Jolpica F1 alpha schedules/results API](https://api.jolpi.ca/docs/) | Results: 5 minutes; schedule: 1 hour; also checks each new local day |
 | US Open | [ESPN public tennis scoreboard](https://site.api.espn.com/apis/site/v2/sports/tennis/atp/scoreboard) (includes singles and doubles for both men and women) | 5 minutes during the event; 6 hours off-season, plus each new local day |
 | NFL | [ESPN public scoreboard endpoint](https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard) | 5 minutes |
 | Clock | `pool.ntp.org`, `time.google.com` | SNTP |
@@ -119,6 +126,7 @@ The board and display drivers retain the official upstream mapping and waveform.
 - `main/dashboard.cc`: response validation, score ordering, and timezone conversion.
 - `main/render.cc`: the 400 × 300 screen layout and section/page mapping.
 - `main/tennis.cc`: bounded tournament parsing and event lifecycle.
+- `main/formula_one.cc`: session classifications, schedule validation, race-day anchors, and bounded result lookup.
 - `main/display_worker.cc`: asynchronous panel access and pending-frame replacement.
 - `main/battery_history.cc`: bounded persistent battery history.
 - `tests/`: data, failure, timezone, credential, and rendering checks. Host tests use AddressSanitizer and UndefinedBehaviorSanitizer.

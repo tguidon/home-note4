@@ -35,6 +35,7 @@ void Footer(ZectrixCanvas& c, const std::string& source, time_t stamp, bool erro
 }
 int SectionPages(const Dashboard& d, int section) {
     if (section == 1) return std::max(1, static_cast<int>((d.tennis.matches.size() + 2) / 3));
+    if (section == 2) return std::max(1, static_cast<int>((d.f1.latest.rows.size() + 3) / 4));
     if (section == 3) return std::max(1, static_cast<int>((d.nfl.games.size() + 3) / 4));
     return 1;
 }
@@ -105,16 +106,41 @@ void RenderDashboard(ZectrixCanvas& c, const Dashboard& d, int page, time_t now,
             }
         }
         Footer(c, home::TennisEnded(tennis, now) ? "Tennis: ESPN | US Open season complete" : "Tennis: ESPN | * Winner | Updates every 5 min", d.tennis_updated, d.tennis_error, now, d.refreshing, SectionPages(d, 1) > 1);
-    } else if (page == SectionStart(d, 2)) {
+    } else if (page < SectionStart(d, 3)) {
+        const auto& f = d.f1;
+        const int index = page - SectionStart(d, 2);
         Text(c, 14, 44, "FORMULA 1", 2);
-        Text(c, 14, 83, d.f1.next_valid ? (d.f1.next.name.empty() ? "No next race announced" : "NEXT: " + d.f1.next.name) : "Next race: waiting for data");
-        if (!d.f1.next.name.empty()) Text(c, 14, 105, LocalRaceTime(d.f1.next));
-        c.Line(14, 132, 386, 132);
-        Text(c, 14, 141, d.f1.last_valid ? (d.f1.last.name.empty() ? "No results this season yet" : "LAST: " + d.f1.last.name) : "Results: waiting for data");
-        Text(c, 14, 160, d.f1.last.date);
-        for (int i = 0; i < 3; ++i) Text(c, 14, 179 + 20 * i, d.f1.podium[i]);
-        const time_t oldest = !d.next_updated || !d.last_updated ? 0 : std::min(d.next_updated, d.last_updated);
-        Footer(c, "F1: Jolpica / Ergast | Results, not live timing", oldest, d.next_error || d.last_error, now, d.refreshing);
+        snprintf(b, sizeof(b), "%d OF %d", index + 1, SectionPages(d, 2));
+        Text(c, 320, 55, b, 1, 66);
+        const auto* anchor = F1Anchor(f, now);
+        if (anchor) {
+            const bool today = LocalDateKey(anchor->starts) == LocalDateKey(now);
+            Text(c, 14, 80, std::string(today ? "TODAY: " : "NEXT: ") + anchor->grand_prix);
+            Text(c, 14, 99, "Race: " + LocalGameTime(anchor->timestamp));
+        } else {
+            Text(c, 14, 80, f.schedule_valid ? "Next race schedule pending" : "Race: waiting for schedule");
+            Text(c, 14, 99, "Main Grand Prix | Times in Eastern");
+        }
+        c.Line(14, 119, 386, 119);
+        if (f.latest.rows.empty()) {
+            Text(c, 14, 132, "Session results are on their way");
+            Text(c, 14, 160, f.pending.empty() ? "Waiting for published results." : std::string(F1SessionTitle(f.pending)) + " results pending.");
+        } else {
+            Text(c, 14, 125, std::string("LATEST: ") + F1SessionTitle(f.latest.session.code));
+            tm date{}; localtime_r(&f.latest.session.starts, &date);
+            strftime(b, sizeof(b), "%a %m/%d", &date);
+            Text(c, 14, 144, F1ShortGrandPrix(f.latest.session.grand_prix) + " | " + b);
+            const size_t start = static_cast<size_t>(index) * 4;
+            for (size_t i = start; i < std::min(start + 4, f.latest.rows.size()); ++i) {
+                const auto& row = f.latest.rows[i]; const int y = 166 + int(i - start) * 18;
+                Text(c, 14, y, row.position_text + ". " + row.driver, 1, 245);
+                const int width = std::min(116, c.TextWidth(row.time.c_str()));
+                Text(c, 386 - width, y, row.time, 1, width);
+            }
+        }
+        const auto source = !f.pending.empty() ? "F1: Jolpica | Awaiting " + f.pending + " results" :
+            f.latest.session.code == "Q" || f.latest.session.code == "SQ" ? "Jolpica | Qualifying order; grid may change" : "F1: Jolpica | Published results | Polls 5 min";
+        Footer(c, source, f.updated, f.error, now, d.refreshing, SectionPages(d, 2) > 1);
     } else {
         snprintf(b, sizeof(b), "NFL / %d OF %d", page - SectionStart(d, 3) + 1, SectionPages(d, 3));
         Text(c, 14, 44, b, 2);

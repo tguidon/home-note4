@@ -20,8 +20,6 @@ bool Number(const cJSON* p, double& out) {
 bool Daily(const cJSON* p, const char* k, double& out) {
     return Number(cJSON_GetArrayItem(Get(p, k), 0), out);
 }
-const cJSON* Races(const cJSON* p) { return Get(Get(Get(p, "MRData"), "RaceTable"), "Races"); }
-Race ReadRace(const cJSON* p) { return {Str(p, "raceName"), Str(p, "date"), Str(p, "time")}; }
 int Priority(const Game& g) { return g.state == "in" ? 0 : g.state == "pre" ? 1 : 2; }
 }
 bool ParseWeather(const std::string& s, Weather& out) {
@@ -37,30 +35,6 @@ bool ParseWeather(const std::string& s, Weather& out) {
     w.observed = Str(c, "time");
     if (w.observed.empty() || code < 0 || code > 99) return false;
     w.code = static_cast<int>(code); w.valid = true; out = w; return true;
-}
-bool ParseNextRace(const std::string& s, FormulaOne& out) {
-    auto j = Parse(s); if (!j || !cJSON_IsArray(Races(j.get()))) return false;
-    const auto* r = cJSON_GetArrayItem(Races(j.get()), 0);
-    auto next = ReadRace(r);
-    if (r && (next.name.empty() || next.date.empty())) return false;
-    out.next = next; out.next_valid = true; return true;
-}
-bool ParseLastRace(const std::string& s, FormulaOne& out) {
-    auto j = Parse(s); if (!j || !cJSON_IsArray(Races(j.get()))) return false;
-    const auto* r = cJSON_GetArrayItem(Races(j.get()), 0);
-    Race race = ReadRace(r); std::array<std::string, 3> podium;
-    if (r) {
-        const auto* results = Get(r, "Results");
-        if (race.name.empty() || race.date.empty() || !cJSON_IsArray(results) || cJSON_GetArraySize(results) == 0) return false;
-        for (int i = 0; i < std::min(3, cJSON_GetArraySize(results)); ++i) {
-            const auto* result = cJSON_GetArrayItem(results, i);
-            const auto* driver = Get(result, "Driver");
-            auto name = Str(driver, "familyName");
-            if (name.empty() || Str(result, "position").empty()) return false;
-            podium[i] = Str(result, "position") + ". " + Str(driver, "givenName") + " " + name;
-        }
-    }
-    out.last = race; out.podium = podium; out.last_valid = true; return true;
 }
 bool ParseFootball(const std::string& s, Football& out) {
     auto j = Parse(s); if (!j) return false;
@@ -130,10 +104,6 @@ std::string LocalGameTime(const std::string& iso) {
     if (!t) return "Time TBA";
     tm local = {}; localtime_r(&t, &local);
     char b[48]; strftime(b, sizeof(b), "%a %m/%d %I:%M%p %Z", &local); return b;
-}
-std::string LocalRaceTime(const Race& r) {
-    if (r.time.empty()) return r.date + " - time TBA";
-    return LocalGameTime(r.date + "T" + r.time);
 }
 bool ValidCredentials(const std::string& ssid, const std::string& password) {
     return !ssid.empty() && ssid.size() <= 32 && ssid.find('\0') == std::string::npos &&
