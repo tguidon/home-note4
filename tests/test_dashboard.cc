@@ -56,20 +56,71 @@ int main(int argc, char** argv) {
     assert(!home::ValidCredentials("wifi", std::string(64,'a')));
     assert(!home::ValidCredentials(std::string("a\0b",3), "password"));
     assert(home::WeatherDescription(95) == std::string("Thunderstorms"));
-    assert(home::PageCount(d) == 2 + static_cast<int>((n + 3) / 4));
+    assert(home::PageCount(d) == 3 + static_cast<int>((n + 3) / 4));
+    const auto tennis_now = home::ParseUtcTime("2026-09-05T22:00Z");
+    assert(home::LocalDateKey(home::ParseUtcTime("2026-09-06T02:00Z")) == 20260905);
+    assert(home::LocalDateKey(home::ParseUtcTime("2026-09-06T04:00Z")) == 20260906);
+    assert(home::ParseTennis(Load("tennis"), tennis_now, d.tennis));
+    assert(d.tennis.valid && d.tennis.event_found && !d.tennis.matches.empty());
+    assert(d.tennis.matches.front().state == "in");
+    bool doubles = false, result = false;
+    for (const auto& match : d.tennis.matches) {
+        doubles |= match.division.find("Doubles") != std::string::npos;
+        result |= match.winners[0] || match.winners[1];
+        assert(home::LocalDateKey(home::ParseUtcTime(match.date)) == 20260905 || match.state == "in");
+    }
+    assert(doubles && result);
+    const auto saved_matches = d.tennis.matches.size();
+    assert(!home::ParseTennis("{", tennis_now, d.tennis));
+    assert(!home::ParseTennis(R"({"events":[{"name":"US Open"}]})", tennis_now, d.tennis));
+    assert(d.tennis.matches.size() == saved_matches);
+    home::Tennis ended = d.tennis;
+    const auto after_open = home::ParseUtcTime("2026-09-14T12:00Z");
+    assert(home::ParseTennis(R"({"events":[]})", after_open, ended));
+    assert(ended.matches.empty() && home::TennisEmptyTitle(ended, after_open) == "US Open is over");
+    assert(home::TennisEmptyTitle(home::Tennis{}, after_open) == "US Open is over");
+    home::Tennis empty_today;
+    assert(home::ParseTennis(R"({"events":[]})", tennis_now, empty_today));
+    assert(home::TennisEmptyTitle(empty_today, tennis_now) == "US Open is not in session");
+    assert(home::ParseFootball(Load("nfl-empty"), none) && none.games.empty());
+    assert(home::SectionStart(d, 0) == 0 && home::SectionStart(d, 1) == 1);
+    assert(home::SectionStart(d, 2) == 1 + home::SectionPages(d, 1));
+    assert(home::SectionStart(d, 3) == 2 + home::SectionPages(d, 1));
+    assert(home::PageCount(d) == home::SectionStart(d, 3) + home::SectionPages(d, 3));
+    if (argc > 2) {
+        std::ifstream source(argv[2]); assert(source.good());
+        std::string payload{std::istreambuf_iterator<char>(source), std::istreambuf_iterator<char>()};
+        home::Tennis full;
+        assert(home::ParseTennis(payload, tennis_now, full));
+        assert(full.matches.size() > 20);
+        std::cout << "Full public tournament response: " << payload.size() << " bytes, " << full.matches.size() << " New York day/live matches\n";
+    }
     if (argc > 1) {
         auto now = static_cast<time_t>(1788645600);
-        d.weather_updated = d.next_updated = d.last_updated = d.nfl_updated = now;
+        d.weather_updated = d.next_updated = d.last_updated = d.nfl_updated = d.tennis_updated = now;
         ZectrixCanvas c;
         for(int page=0; page<home::PageCount(d); ++page) {
-            home::RenderDashboard(c,d,page,now,true);
+            home::RenderDashboard(c,d,page,now,true,87);
             Pbm(c, std::string(argv[1]) + "/page-" + std::to_string(page) + ".pbm");
         }
+        auto finished = d; finished.tennis = ended;
+        home::RenderDashboard(c,finished,1,after_open,true,87);
+        Pbm(c, std::string(argv[1]) + "/tennis-ended.pbm");
+        auto loading = d; loading.tennis = {}; loading.tennis_updated = 0; loading.refreshing = true;
+        home::RenderDashboard(c,loading,1,now,true,87);
+        Pbm(c, std::string(argv[1]) + "/tennis-loading.pbm");
+        auto retry = d; retry.tennis_error = true; retry.tennis.day = 20260904;
+        home::RenderDashboard(c,retry,1,now,true,87);
+        Pbm(c, std::string(argv[1]) + "/tennis-stale.pbm");
         home::RenderMessage(c,"Let's get connected",{"1. Join Wi-Fi: HomeNote4-ABCD","   Password: example12345","2. Open http://192.168.4.1","3. Enter your home 2.4 GHz Wi-Fi.","Keep this screen's password private.","Hold DOWN to power off."});
         Pbm(c, std::string(argv[1]) + "/setup.pbm");
         d.weather_error = true;
-        home::RenderDashboard(c,d,0,now + 86400,false);
+        home::RenderDashboard(c,d,0,now + 86400,false,100);
         Pbm(c, std::string(argv[1]) + "/offline.pbm");
+        home::RenderDashboard(c,d,0,now,true,0);
+        Pbm(c, std::string(argv[1]) + "/battery-empty.pbm");
+        home::RenderDashboard(c,d,0,now,false);
+        Pbm(c, std::string(argv[1]) + "/battery-unknown.pbm");
     }
     std::cout << "PASS: real API fixtures, failure preservation, empty feeds, team mapping, live priority, DST, credentials, and pagination\n";
 }

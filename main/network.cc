@@ -10,6 +10,7 @@
 #include "esp_http_client.h"
 #include "esp_http_server.h"
 #include "esp_mac.h"
+#include "esp_log.h"
 #include "esp_netif.h"
 #include "esp_random.h"
 #include "esp_sntp.h"
@@ -163,25 +164,28 @@ void StartClock() {
     esp_sntp_setservername(0, "pool.ntp.org"); esp_sntp_setservername(1, "time.google.com");
     esp_sntp_init();
 }
-bool FetchJson(const char* url, std::string& body) {
+bool FetchJson(const char* url, std::string& body, size_t max_bytes) {
     // Refuse TLS until a credible clock is available; certificate checking stays enabled.
     if (!connected || time(nullptr) < 1767225600) return false;
     esp_http_client_config_t cfg = {}; cfg.url = url; cfg.timeout_ms = 12000;
     cfg.crt_bundle_attach = esp_crt_bundle_attach;
-    cfg.user_agent = "HomeNote4/0.1 (personal e-paper dashboard)";
+    // ESPN accepts this standard library compatibility header, but rejects
+    // the prior custom app User-Agent with HTTP 403. No authentication is used.
+    cfg.user_agent = "Python-urllib/3.10";
     cfg.buffer_size = 4096;
     auto h = esp_http_client_init(&cfg); if (!h) return false;
     esp_http_client_set_header(h, "Accept", "application/json");
     esp_http_client_set_header(h, "Accept-Encoding", "identity");
     bool ok = esp_http_client_open(h, 0) == ESP_OK;
-    if (ok) { esp_http_client_fetch_headers(h); ok = esp_http_client_get_status_code(h) == 200; }
+    if (ok) { esp_http_client_fetch_headers(h); ok = esp_http_client_get_status_code(h) == 200;
+        if (!ok) ESP_LOGW("home_http", "HTTP status %d", esp_http_client_get_status_code(h)); }
     body.clear(); char buf[4096];
-    const int64_t deadline = esp_timer_get_time() + 25000000;
+    const int64_t deadline = esp_timer_get_time() + 45000000;
     while (ok) {
         int n = esp_http_client_read(h, buf, sizeof(buf));
         if (n < 0) { ok = false; break; }
         if (n == 0) { ok = esp_http_client_is_complete_data_received(h); break; }
-        if (body.size() + n > 768 * 1024 || esp_timer_get_time() > deadline) { ok = false; break; }
+        if (body.size() + n > max_bytes || esp_timer_get_time() > deadline) { ok = false; break; }
         body.append(buf, n);
     }
     esp_http_client_close(h); esp_http_client_cleanup(h);

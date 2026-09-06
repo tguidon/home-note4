@@ -107,22 +107,27 @@ const char* WeatherDescription(int c) {
     if (c >= 95) return "Thunderstorms";
     return "Conditions unavailable";
 }
-std::string LocalGameTime(const std::string& iso) {
+time_t ParseUtcTime(const std::string& iso) {
     tm utc = {};
     const char* end = strptime(iso.c_str(), "%Y-%m-%dT%H:%M", &utc);
-    if (!end || iso.back() != 'Z') return "Time TBA";
+    if (!end || iso.back() != 'Z') return 0;
     // ESP-IDF's newlib does not expose timegm. Convert UTC without changing
     // the process timezone, which is also used by the display task.
     const int year = utc.tm_year + 1900;
-    if (year < 1970 || year > 2100 || utc.tm_mon < 0 || utc.tm_mon > 11) return "Time TBA";
+    if (year < 1970 || year > 2100 || utc.tm_mon < 0 || utc.tm_mon > 11) return 0;
     auto leap = [](int y) { return y % 4 == 0 && (y % 100 != 0 || y % 400 == 0); };
     const int months[] = {31,28,31,30,31,30,31,31,30,31,30,31};
-    if (utc.tm_mday < 1 || utc.tm_mday > months[utc.tm_mon] + (utc.tm_mon == 1 && leap(year))) return "Time TBA";
+    if (utc.tm_mday < 1 || utc.tm_mday > months[utc.tm_mon] + (utc.tm_mon == 1 && leap(year))) return 0;
     int64_t days = 0;
     for (int y = 1970; y < year; ++y) days += leap(y) ? 366 : 365;
     for (int m = 0; m < utc.tm_mon; ++m) days += months[m] + (m == 1 && leap(year));
     days += utc.tm_mday - 1;
     time_t t = static_cast<time_t>(days * 86400 + utc.tm_hour * 3600 + utc.tm_min * 60);
+    return t;
+}
+std::string LocalGameTime(const std::string& iso) {
+    const time_t t = ParseUtcTime(iso);
+    if (!t) return "Time TBA";
     tm local = {}; localtime_r(&t, &local);
     char b[48]; strftime(b, sizeof(b), "%a %m/%d %I:%M%p %Z", &local); return b;
 }

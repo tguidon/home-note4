@@ -9,6 +9,6 @@ bool ConnectWifi(unsigned timeout_ms);
 bool WifiConnected();
 esp_err_t StartSetup(SetupInfo& info);
 void SetupOnNextBoot();
-bool FetchJson(const char* url, std::string& body);
+bool FetchJson(const char* url, std::string& body, size_t max_bytes = 768 * 1024);
 void StartClock();
 }

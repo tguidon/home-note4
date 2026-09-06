@@ -1,4 +1,5 @@
 #pragma once
+#include "tennis.h"
 #include <array>
 #include <ctime>
 #include <string>
@@ -30,6 +31,9 @@ struct Dashboard {
     Weather weather;
     FormulaOne f1;
     Football nfl;
+    Tennis tennis;
+    time_t tennis_updated = 0;
+    bool tennis_error = false, refreshing = false;
     time_t weather_updated = 0, next_updated = 0, last_updated = 0, nfl_updated = 0;
     bool weather_error = false, next_error = false, last_error = false, nfl_error = false;
     unsigned revision = 0;

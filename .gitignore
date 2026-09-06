@@ -16,3 +16,6 @@ __pycache__/
 
 # Machine-specific ESP-IDF installation paths
 /tools/activate-local.sh
+
+# Local battery measurement exports
+/battery-*.csv

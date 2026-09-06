@@ -1,6 +1,6 @@
 # Home Note4
 
-An English dashboard for the monochrome ZECTRIX NOTE4, with weather for Wilton, Connecticut (06897), the date, Formula 1, and NFL scores. It runs directly on the ESP32-S3. No WeChat, ZECTRIX account, API key, or Mac server is required.
+An English dashboard for the monochrome ZECTRIX NOTE4, with weather for Wilton, Connecticut (06897), the date, US Open tennis, Formula 1, and NFL scores. It runs directly on the ESP32-S3. No WeChat, ZECTRIX account, API key, or Mac server is required.
 
 ## Current status
 
@@ -8,27 +8,35 @@ The firmware builds with ESP-IDF **5.4.4** for **ESP32-S3, 16 MB flash, 8 MB oct
 
 **Installed on September 5, 2026.** The purchased NOTE4 DevKit documentation, factory board identifier, and USB chip information match the v1.0 N16R8 profile. Two full factory reads match byte for byte. Flash verification, dashboard boot, 8 MB PSRAM testing, RTC/NFC initialization, display-driver calls, and setup AP startup passed. The owner confirmed that the dashboard works after Wi-Fi setup. This confirms the normal setup and display path; invalid-password recovery, prolonged reconnection tests, and battery endurance remain unverified. Local installation records are in the ignored `dist/` and `backups/` directories.
 
-## How it runs
+**Version 0.2.0 device verification:** two consecutive US Open fetches each parsed 40 matches; NFL loaded 16 upcoming games. Eleven full-frame updates completed successfully in 1,292–1,318 ms. Rapid navigation and paging were exercised through the local USB commands that use the button action handler. Wi-Fi reconnected and all six previously exported battery records survived; the log now contains 15 records. Visual inspection of this updated screen and physical button timing remain owner checks. The factory backup remains available.
++
++## How it runs
 
 The firmware is the application. C++ source, the hardware drivers, and ESP-IDF are compiled into native ESP32-S3 machine code. USB flashing writes this binary into the device's nonvolatile flash memory. At startup, the bootloader loads the application and starts its FreeRTOS tasks.
 
-The main task handles buttons and draws the display. A background task fetches JSON directly from the weather and sports APIs over HTTPS. It validates each response and shares a snapshot with the display task. The device stores Wi-Fi settings separately in NVS, so no password is compiled into the application. During setup, the NOTE4 itself serves the small web page used to enter those settings.
+The main task handles buttons and renders cached pages. A dedicated display worker refreshes the panel without blocking input. A background task fetches JSON directly from the weather and sports APIs over HTTPS. It validates each response and shares a snapshot with the display task. The device stores Wi-Fi settings separately in NVS, so no password is compiled into the application. During setup, the NOTE4 itself serves the small web page used to enter those settings.
 
 Once configured, it operates without a computer. Code changes require a new build and USB flash; this version does not implement wireless firmware updates.
 
 ## Pages and controls
 
 - Weather: temperature, conditions, feels-like temperature, daily high and low, wind, and rain probability for Wilton.
+- US Open: today's singles and doubles, three matches per page. Live matches come first, then scheduled matches and results. Set scores appear beside each player/team; an asterisk marks the winner. MS/WS mean men's/women's singles; MD/WD mean men's/women's doubles; XD means mixed doubles.
 - F1: the next race in Eastern time, plus the latest race's top three finishers. This is a schedule/results feed, not live timing.
 - NFL: four games per page, with live games first, upcoming games next, and completed games last. Scheduled games show local dates and times, not 0–0 scores.
 - The date follows Eastern time, including daylight-saving changes.
+- Battery percentage appears beside ONLINE/OFFLINE on every dashboard page. It uses the official board driver's voltage-based estimate and updates with each screen redraw. `--%` means the battery reading is unavailable; charging and load can affect the estimate.
 
 | Button | Action |
 | --- | --- |
-| Side UP / DOWN | Previous / next page |
-| Front OK | Request a refresh, limited to once per minute |
+| Side UP / DOWN | Switch sections: Weather → US Open → F1 → NFL |
+| Front OK | Next match page within a sport; request a refresh on single-page sections, limited to once per minute |
 | Hold front OK about 1.5 seconds | Restart into Wi-Fi setup |
 | Hold side DOWN about 3 seconds | Shut down; USB can keep the power rail energized |
+
+Navigation acknowledges taps with a 120 ms LED pulse. There is no three-second artificial redraw delay. The display worker has one pending frame: rapid taps replace obsolete frames rather than replaying every intermediate screen. Page changes use cached RAM data and never wait for HTTP. Empty pages show a loading state; cached pages keep their contents while feeds update. The e-paper waveform still takes time, so a page change cannot be instantaneous like an LCD. Full 1bpp refreshes keep text clean; panel power is removed after each refresh.
+
+The tennis query follows the New York calendar day, including a still-live match that crosses midnight. After the tournament's published end time, its page becomes **US Open is over**, with Weather/F1/NFL still available on Up/Down. A valid empty schedule is distinct from a failed request. Cached dates and stale live states are labelled explicitly. The feed's event dates drive the transition; the published 2026 end date is also a fallback after an off-season reboot. Future event dates come from the feed, not a guessed annual schedule.
 
 ## Wi-Fi setup after installation
 
@@ -51,10 +59,11 @@ Internet access to NTP and the data providers is required. HTTPS certificate val
 | --- | --- | --- |
 | Weather | [Open-Meteo](https://open-meteo.com/en/docs), CC BY 4.0, free noncommercial API | 15 minutes |
 | F1 | [Jolpica F1 / Ergast-compatible API](https://api.jolpi.ca/ergast/) | 60 minutes |
+| US Open | [ESPN public tennis scoreboard](https://site.api.espn.com/apis/site/v2/sports/tennis/atp/scoreboard) (includes singles and doubles for both men and women) | 5 minutes during the event; 6 hours off-season, plus each new local day |
 | NFL | [ESPN public scoreboard endpoint](https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard) | 5 minutes |
 | Clock | `pool.ntp.org`, `time.google.com` | SNTP |
 
-ESPN's endpoint is publicly accessible but undocumented; it is not an open-source or guaranteed service. The ESPN adapter is isolated in `main/dashboard.cc` and `main/feeds.cc`. Requests have time and size limits. Empty schedules and unavailable results have explicit display states. Attribution appears on each page. Test fixtures capture provider data on September 5, 2026; they are test samples, not the running dashboard's data source.
+ESPN's endpoint is publicly accessible but undocumented; it is not an open-source or guaranteed service. The ESPN adapters are in `main/dashboard.cc`, `main/tennis.cc`, and `main/feeds.cc`. ESPN rejects the prior custom User-Agent; requests now use a tested standard-library compatibility header. The tennis endpoint returns the full tournament despite its date parameter, so a bounded token parser reads one match at a time rather than allocating a full JSON tree. A reusable download buffer is allocated at startup to keep a contiguous parser allocation available in PSRAM. Tennis responses are capped at 3 MiB and 200,000 tokens; other feeds retain the 768 KiB limit. Requests have time and size limits. Empty schedules and unavailable results have explicit display states. Attribution appears on each page. Test fixtures capture provider data on September 5, 2026; they are test samples, not the running dashboard's data source.
 
 Weather coordinates, units, and endpoints are in `main/feeds.cc`. Eastern timezone rules are in `main/dashboard.h`.
 
@@ -96,11 +105,11 @@ After those checks, install the verified merged image using the matched serial p
 - Wi-Fi reconnection and clear stale-data behavior.
 - Panel power off between refreshes and battery shutdown with USB disconnected.
 
-## Scope of this first version
+## Power and hardware scope
 
 This is a USB desk dashboard. It uses Wi-Fi modem power saving and powers off the e-paper rail between full 1bpp refreshes, but it does not schedule automatic deep sleep. Battery endurance is unmeasured. No OTA update path is configured; subsequent firmware updates use USB. Audio and NFC are not application features in this version.
 
-The board and display drivers retain the official upstream mapping and waveform. The application asserts the board power latch before networking, serializes display access on the main task, and uses a separate data-fetch task with protected snapshots. Full refreshes avoid partial-refresh state and ghosting complications during the first hardware tests.
+The board and display drivers retain the official upstream mapping and waveform. The application asserts the board power latch before networking, serializes panel access on a dedicated display task, and uses a separate data-fetch task with protected snapshots. Full refreshes avoid partial-refresh state and ghosting complications across entirely different pages.
 
 ## Code map
 
@@ -108,7 +117,32 @@ The board and display drivers retain the official upstream mapping and waveform.
 - `main/network.cc`, `main/setup.html`: Wi-Fi storage, local setup, SNTP, and bounded HTTPS.
 - `main/feeds.cc`: source URLs, polling, and snapshot synchronization.
 - `main/dashboard.cc`: response validation, score ordering, and timezone conversion.
-- `main/render.cc`: the 400 × 300 screen layout.
+- `main/render.cc`: the 400 × 300 screen layout and section/page mapping.
+- `main/tennis.cc`: bounded tournament parsing and event lifecycle.
+- `main/display_worker.cc`: asynchronous panel access and pending-frame replacement.
+- `main/battery_history.cc`: bounded persistent battery history.
 - `tests/`: data, failure, timezone, credential, and rendering checks. Host tests use AddressSanitizer and UndefinedBehaviorSanitizer.
 
 Based on [itopinion/zectrix-note4-epd-demo](https://github.com/itopinion/zectrix-note4-epd-demo). Its MIT license and third-party notices remain in the repository. The original README is preserved in `docs/UPSTREAM_README.md`.
+
+
+## Local battery history
+
+The device saves a battery reading at startup (after charger settling), every 15 minutes while running, and before button-requested shutdown. A bounded NVS ring holds the latest 512 readings: about five days and eight hours at the regular interval, less with frequent restarts. It overwrites the oldest readings and survives power loss and app-only firmware updates. It needs no partition changes and never erases Wi-Fi settings to recover storage. Logging stops after a storage error until the next boot.
+
+Each reading contains sequence number, random boot ID, Unix timestamp (zero before clock sync), uptime in seconds, averaged/calibrated voltage in millivolts, estimated percentage, and battery-valid, external-power, charging, full, fault, no-battery, and Wi-Fi-connected flags. Timestamps and boot IDs help separate interrupted discharge sessions. The log contains no SSID, password, location, or fetched feed data. It is never uploaded. NVS uses wear levelling; the 15-minute cadence limits flash writes without requiring extra screen refreshes.
+
+To export locally, close any serial monitor, activate the ESP-IDF environment, and run:
+
+```sh
+python tools/export-battery.py --port /dev/cu.usbmodem2101 --output battery-2026-09-05.csv
+```
+
+Use a fresh output filename each time. The script validates row counts and sequence continuity and saves only battery CSV records. Opening USB can restart the board on this Mac; previously saved readings remain available. A serial terminal can also send `battery` followed by Enter at 115200 baud. Export works in both the dashboard and Wi-Fi setup modes.
+
+The readings will help estimate runtime and tune the voltage curve after normal unplugged use. Charging and load affect voltage, so this remains an estimate rather than a measured state of charge. A sudden low-battery power loss may occur up to one sampling interval after the last saved reading. There is no measured runtime for this firmware yet; its always-awake processor and connected Wi-Fi do not match the factory's one-sync-per-day standby test.
+
+
+## Local USB diagnostics
+
+At 115200 baud, send `next`, `previous`, or `more` followed by Enter to exercise the same navigation actions as the buttons. `refresh` requests a rate-limited background refresh; `battery` exports the saved battery log. These commands only work locally over USB. The display task logs each completed frame's duration and result. Opening the USB port can restart this board on macOS.
