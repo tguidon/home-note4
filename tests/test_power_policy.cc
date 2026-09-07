@@ -64,7 +64,7 @@ int main() {
     assert(RetrySeconds(1) == 60 && RetrySeconds(2) == 120 && RetrySeconds(20) == 3600);
     BatteryIndicator battery;
     assert(battery.Update(33, false, false, false, false, false, 100) == "~33%");
-    assert(battery.Update(69, true, true, false, false, false, 101) == "CHARGING");
+    assert(battery.Update(69, true, true, false, false, false, 101) == "⚡ ~69%");
     assert(battery.Update(100, true, false, true, false, false, 102) == "FULL");
     assert(battery.Update(63, false, false, false, false, false, 103) == "SETTLING");
     assert(battery.Update(35, false, false, false, false, false, 134) == "~35%");

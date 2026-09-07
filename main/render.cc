@@ -1,4 +1,5 @@
 #include "render.h"
+#include "battery_indicator.h"
 #include <algorithm>
 #include <cstdio>
 
@@ -58,9 +59,21 @@ void RenderDashboard(ZectrixCanvas& c, const Dashboard& d, int page, time_t now,
     Text(c, 14, 12, b);
     const std::string battery = !battery_label.empty() ? battery_label : battery_percent < 0 ? "--%" :
         std::to_string(std::clamp(battery_percent, 0, 100)) + "%";
-    const std::string status = std::string(online ? "ONLINE  " : "OFFLINE  ") + battery;
-    const int status_width = c.TextWidth(status.c_str());
-    Text(c, 386 - status_width, 12, status, 1, status_width);
+    const bool charging = battery.rfind(kChargingPrefix, 0) == 0;
+    const std::string battery_text = charging ? battery.substr(sizeof(kChargingPrefix) - 1) : battery;
+    const std::string connection = online ? "ONLINE  " : "OFFLINE  ";
+    const int battery_x = 386 - c.TextWidth(battery_text.c_str());
+    const int icon_width = charging ? 12 : 0;
+    Text(c, battery_x - icon_width - c.TextWidth(connection.c_str()), 12, connection);
+    if (charging) {
+        // A solid 8 x 12 lightning bolt, aligned with the small status font.
+        constexpr uint8_t bolt[] = {0x0c, 0x1c, 0x18, 0x38, 0x30, 0x7e,
+                                    0x7e, 0x0c, 0x1c, 0x18, 0x30, 0x20};
+        for (int y = 0; y < 12; ++y)
+            for (int x = 0; x < 8; ++x)
+                if (bolt[y] & (0x80 >> x)) c.Pixel(battery_x - icon_width + x, 12 + y, true);
+    }
+    Text(c, battery_x, 12, battery_text);
     c.Line(14, 35, 386, 35);
     if (page < SectionStart(d, 1, now)) {
         const auto& w = d.weather;
@@ -90,7 +103,7 @@ void RenderDashboard(ZectrixCanvas& c, const Dashboard& d, int page, time_t now,
         } else if (agenda.events.empty()) {
             Text(c, 14, 154, !calendar.valid ? (calendar.error ? "Calendar unavailable - will retry" : "Loading your calendar...") :
                 now >= calendar.through ? "Saved agenda expired - reconnect" : calendar.skipped ? "Some events could not be read" : "No events in the next 90 days.");
-            Text(c, 14, 182, calendar.skipped ? "Check Google Calendar for the full agenda." : "5 min during playutes over Wi-Fi.");
+            Text(c, 14, 182, calendar.skipped ? "Check Google Calendar for the full agenda." : "Updates every 5 minutes over Wi-Fi.");
         } else {
             const size_t start = static_cast<size_t>(page) * 3;
             for (size_t i = start; i < std::min(start + 3, agenda.events.size()); ++i) {

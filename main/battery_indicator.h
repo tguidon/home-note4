@@ -4,6 +4,8 @@
 #include <string>
 
 namespace home {
+// Rendered as a bitmap by the dashboard because the bundled font is ASCII.
+inline constexpr char kChargingPrefix[] = "⚡ ";
 // Display smoothing only. Persistent telemetry always retains the raw estimate.
 class BatteryIndicator {
 public:
@@ -14,7 +16,9 @@ public:
             if (fault) return "POWER ERR";
             if (no_battery) return "NO BAT";
             if (full) return "FULL";
-            return charging ? "CHARGING" : "USB";
+            if (charging) return std::string(kChargingPrefix) + (percent < 0 ? "--%" :
+                "~" + std::to_string(std::clamp(percent, 0, 100)) + "%");
+            return "USB";
         }
         if (was_powered_) { was_powered_ = false; settled_after_ = seconds + 30; }
         if (percent < 0) return "--%";
