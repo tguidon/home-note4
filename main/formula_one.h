@@ -20,6 +20,7 @@ struct FormulaOne {
     bool schedule_valid = false, error = false;
     int year = 0;
     time_t schedule_updated = 0, updated = 0;
+    time_t classification_seen = 0;
     std::vector<F1Session> sessions;
     F1Result latest;
     std::string pending;

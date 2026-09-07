@@ -10,6 +10,7 @@ struct TennisMatch {
     std::array<std::string, 2> players, scores;
     std::array<bool, 2> winners = {};
     bool time_valid = false;
+    bool completed = false;
 };
 struct Tennis {
     bool valid = false, event_found = false;

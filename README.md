@@ -15,6 +15,8 @@ The firmware builds with ESP-IDF **5.4.4** for **ESP32-S3, 16 MB flash, 8 MB oct
 
 **Version 0.4.0 device verification:** the application-only flash passed hash verification and booted as 0.4.0 on the same ESP32-S3 with 8 MB PSRAM. Saved Wi-Fi reconnected; weather, F1 (22 drivers), NFL (16 games), and US Open (40 matches) loaded. Nine display updates returned ESP_OK in 1,294–1,318 ms; USB navigation returned to the new home screen. All 20 pre-update battery records survived; 23 were exported afterward. Calendar/settings sanitizer tests and a local browser save test passed with invented data. The owner subsequently entered the private Google Calendar link through setup and confirmed that the calendar works on the device. The factory backup remains available; restoration has not been tested.
 
+**Version 0.5.0 code update (September 7, 2026):** targets 3–4 days between charges using automatic light sleep and event-aware sports fetching. Audio, NFC and RTC supplies remain enabled. This version is built and host-tested, but has not been flashed or physically validated. The September 7 export from 0.4.0 contains 150 uninterrupted battery samples spanning 37 hours 15 minutes, ending at 3.616 V / 33%; the next USB charging sample is 3.843 V / 69%. These readings do not calibrate remaining capacity.
+
 ## How it runs
 
 The firmware is the application. C++ source, the hardware drivers, and ESP-IDF are compiled into native ESP32-S3 machine code. USB flashing writes this binary into the device's nonvolatile flash memory. At startup, the bootloader loads the application and starts its FreeRTOS tasks.
@@ -30,7 +32,7 @@ Once configured, it operates without a computer. Code changes require a new buil
 - F1: the main Grand Prix name and start time stay at the top of every page. The latest published practice, sprint qualifying, sprint race, qualifying, or race classification appears below, four drivers per page. OK pages through every driver. Positions and times come from the provider; qualifying order can differ from the final starting grid after penalties.
 - NFL: four games per page, with live games first, upcoming games next, and completed games last. Scheduled games show local dates and times, not 0–0 scores.
 - The date follows Eastern time, including daylight-saving changes.
-- Battery percentage appears beside ONLINE/OFFLINE on every dashboard page. It uses the official board driver's voltage-based estimate and updates with each screen redraw. `--%` means the battery reading is unavailable; charging and load can affect the estimate.
+- Battery status appears beside ONLINE/OFFLINE. USB shows CHARGING, FULL, USB, or a power error instead of treating charging voltage as capacity. After unplugging, SETTLING appears for 30 seconds, followed by a smoothed approximate percentage such as `~33%`. `--%` means the reading is unavailable. Raw voltage and the original percentage remain in the battery log for comparison; smoothing does not calibrate capacity.
 
 | Button | Action |
 | --- | --- |
@@ -50,15 +52,15 @@ F1 waits for published classifications and keeps the prior session while newer r
 ## Wi-Fi setup after installation
 
 1. Power the NOTE4 over USB.
-2. Read the temporary `HomeNote4-XXXX` network name and its random password on the display.
+2. Read the temporary `HomeNote4-XXXX` network name and its saved per-device password on the display.
 3. Join that network from a phone or computer. Stay connected if it reports no internet.
 4. Open **http://192.168.4.1** in a browser.
 5. Select **Set up a Wi-Fi network**, enter your home **2.4 GHz** network name and password, then choose **Save and restart**.
 6. Reconnect the phone or computer to your home network. The NOTE4 restarts, joins Wi-Fi, sets its clock, and loads the dashboard.
 
-Setup accepts WPA2/WPA3 personal networks with an 8–63 byte password, or open networks with a blank password. Enterprise Wi-Fi and networks that require a browser login are not supported. If connection fails after 30 seconds, the setup screen returns with a new temporary password. Holding OK later also returns to setup.
+Setup accepts WPA2/WPA3 personal networks with an 8–63 byte password, or open networks with a blank password. Enterprise Wi-Fi and networks that require a browser login are not supported. If connection fails after 30 seconds, the dashboard opens offline and keeps retrying. Hold OK to reopen setup and correct credentials; the setup password is reused.
 
-Network details and the optional calendar link are saved in the device's local `home_note` NVS namespace. A versioned settings value keeps them together; existing Wi-Fi settings migrate when settings are next saved. They are not embedded in the firmware or logged. This build does not enable flash encryption. Keep flash backups private because they may contain credentials. The setup server runs only in AP setup mode, behind its random WPA2 password; a per-session form token protects saving.
+Network details and the optional calendar link are saved in the device's local `home_note` NVS namespace. A versioned settings value keeps them together; existing Wi-Fi settings migrate when settings are next saved. They are not embedded in the firmware or logged. This build does not enable flash encryption. Keep flash backups private because they may contain credentials. The setup server runs only in AP setup mode, behind its saved WPA2 password; a per-session form token protects saving.
 
 Internet access to NTP and the data providers is required. HTTPS certificate validation remains enabled. If the clock cannot synchronize, data requests wait. If a provider fails, the last successful data stays in RAM with a stale indicator and update timestamp; it is not retained across a reboot.
 
@@ -75,7 +77,7 @@ The calendar stays private and read-only. Anyone with the secret link can read i
 
 To change calendars or remove the link, repeat setup and select the relevant Calendar option. Removing it clears the RAM agenda on restart and does not change Google events. **Keep current calendar setting** preserves the link when you change Wi-Fi. Saving a new link checks its private Google URL format; the device fetches and validates the feed after restarting. A revoked or inaccessible link shows an unavailable state and retries.
 
-Calendar requests run every five minutes and after local midnight. Feed failures keep the last valid RAM agenda with a stale indicator. Events are expanded for 90 days; an expired offline cache asks you to reconnect. Event data is not written to flash or retained after a reboot. Google controls when an edited event appears in its feed, so polling does not guarantee immediate updates.
+Calendar requests normally run every five minutes and after local midnight. Consecutive transport/parse failures back off from one minute to at most one hour. Feed failures keep the last valid RAM agenda with a stale indicator. Events are expanded for 90 days; an expired offline cache asks you to reconnect. Event data is not written to flash or retained after a reboot. Google controls when an edited event appears in its feed, so polling does not guarantee immediate updates.
 
 The bounded iCalendar parser supports ordinary daily, weekly, monthly, and yearly rules; intervals and counts; UNTIL, BYDAY, BYMONTH, BYMONTHDAY, BYSETPOS, and WKST; all-day events; EXDATE/RDATE; and moved/cancelled single instances. It handles UTC, floating Eastern times, and embedded VTIMEZONE observances with annual rules or explicit transition dates. Tests cover US and European DST changes. Recurrence follows [RFC 5545](https://www.rfc-editor.org/rfc/rfc5545.html).
 
@@ -87,9 +89,9 @@ This is not a complete RFC implementation. Sub-daily rules, EXRULE, RANGE=THISAN
 | --- | --- | --- |
 | Calendar | Your private Google Calendar iCal feed | 5 minutes, plus each new local day |
 | Weather | [Open-Meteo](https://open-meteo.com/en/docs), CC BY 4.0, free noncommercial API | 15 minutes |
-| F1 | [Jolpica F1 alpha schedules/results API](https://api.jolpi.ca/docs/) | Results: 5 minutes; schedule: 1 hour; also checks each new local day |
-| US Open | [ESPN public tennis scoreboard](https://site.api.espn.com/apis/site/v2/sports/tennis/atp/scoreboard) (includes singles and doubles for both men and women) | 5 minutes during the event; 6 hours off-season, plus each new local day |
-| NFL | [ESPN public scoreboard endpoint](https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard) | 5 minutes |
+| F1 | [Jolpica F1 alpha schedules/results API](https://api.jolpi.ca/docs/) | Event-aware: daily on quiet days; hourly before sessions; 5 minutes near sessions and while recent results are pending |
+| US Open | [ESPN public tennis scoreboard](https://site.api.espn.com/apis/site/v2/sports/tennis/atp/scoreboard) (includes singles and doubles for both men and women) | Event-aware: daily on quiet days; hourly before matches; 5 minutes near/live matches |
+| NFL | [ESPN public scoreboard endpoint](https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard) | Event-aware: daily on quiet days; hourly before games; 5 minutes near/live games |
 | Clock | `pool.ntp.org`, `time.google.com` | SNTP |
 
 ESPN's endpoint is publicly accessible but undocumented; it is not an open-source or guaranteed service. The ESPN adapters are in `main/dashboard.cc`, `main/tennis.cc`, and `main/feeds.cc`. ESPN rejects the prior custom User-Agent; requests now use a tested standard-library compatibility header. The tennis endpoint returns the full tournament despite its date parameter, so a bounded token parser reads one match at a time rather than allocating a full JSON tree. A reusable download buffer is allocated at startup to keep a contiguous parser allocation available in PSRAM. Tennis responses are capped at 3 MiB and 200,000 tokens; calendar responses also have a 3 MiB limit; other feeds retain the 768 KiB limit. Requests have time and size limits. Empty schedules and unavailable results have explicit display states. Attribution appears on each page. Test fixtures capture provider data on September 5, 2026; they are test samples, not the running dashboard's data source.
@@ -136,7 +138,13 @@ After those checks, install the verified merged image using the matched serial p
 
 ## Power and hardware scope
 
-This is a USB desk dashboard. It uses Wi-Fi modem power saving and powers off the e-paper rail between full 1bpp refreshes, but it does not schedule automatic deep sleep. Battery endurance is unmeasured. No OTA update path is configured; subsequent firmware updates use USB. Audio and NFC are not application features in this version.
+The first battery target is **3–4 days**, pending device measurement. Firmware 0.5.0 enables ESP-IDF frequency scaling (40–160 MHz), tickless idle and automatic light sleep while keeping Wi-Fi associated with minimum modem power saving. Cached pages remain in RAM. Button interrupts wake the input worker; debounce and long-press polling run only while needed. The main task wakes on button/feed notifications and services power state about once per second. USB, setup and display waveforms inhibit automatic sleep. The USB controller also has its own connection-aware sleep protection.
+
+At the owner's request, **audio, NFC and RTC supplies remain enabled**. Existing e-paper power-off between frames and explicit DOWN-button shutdown are preserved. There is no new peripheral power gating, automatic deep sleep, radio-off schedule, or OTA path. Buttons, wake reliability, display timing, reconnect behavior and actual endurance must be tested on hardware before declaring the battery target met.
+
+Sports use Eastern dates. Valid quiet-day schedules wait until local midnight; same-day starts are checked hourly and every five minutes within 30 minutes of the start. Live NFL/tennis poll every five minutes. Unknown, postponed or overdue states are checked every 30 minutes; incomplete schedules every five minutes. Completed NFL/tennis results receive a correction check 30 minutes after first observing completion, then the next daily check. F1 checks recently published sessions for four hours after their start, and unpublished results every five minutes for up to 12 hours across midnight before slowing down. A newly discovered classification gets one 30-minute correction check. This does not turn Jolpica into guaranteed live timing. The main-race anchor and race-day retention remain unchanged.
+
+Weather stays at 15 minutes and calendar at five minutes. Fetch failures use exponential backoff, capped at one hour. Manual refresh retains its one-minute limit. Daily sports caches show their actual update timestamp and do not become STALE after just two quiet hours. Publications are batched to avoid redundant updating frames. If home Wi-Fi is unavailable at startup, saved credentials remain active and connection attempts back off to roughly five-minute delays; hold OK to enter setup explicitly.
 
 The board and display drivers retain the official upstream mapping and waveform. The application asserts the board power latch before networking, serializes panel access on a dedicated display task, and uses a separate data-fetch task with protected snapshots. Full refreshes avoid partial-refresh state and ghosting complications across entirely different pages.
 
@@ -160,7 +168,7 @@ Based on [itopinion/zectrix-note4-epd-demo](https://github.com/itopinion/zectrix
 
 ## Local battery history
 
-The device saves a battery reading at startup (after charger settling), every 15 minutes while running, and before button-requested shutdown. A bounded NVS ring holds the latest 512 readings: about five days and eight hours at the regular interval, less with frequent restarts. It overwrites the oldest readings and survives power loss and app-only firmware updates. It needs no partition changes and never erases Wi-Fi settings to recover storage. Logging stops after a storage error until the next boot.
+The device saves a raw battery reading at startup (after charger settling), every 15 minutes while running, on observed charge/power transitions (limited to one write per minute), and before button-requested shutdown. A bounded NVS ring holds the latest 512 readings: about five days and eight hours at the regular interval, less with frequent restarts. It overwrites the oldest readings and survives power loss and app-only firmware updates. It needs no partition changes and never erases Wi-Fi settings to recover storage. Logging stops after a storage error until the next boot.
 
 Each reading contains sequence number, random boot ID, Unix timestamp (zero before clock sync), uptime in seconds, averaged/calibrated voltage in millivolts, estimated percentage, and battery-valid, external-power, charging, full, fault, no-battery, and Wi-Fi-connected flags. Timestamps and boot IDs help separate interrupted discharge sessions. The log contains no SSID, password, location, or fetched feed data. It is never uploaded. NVS uses wear levelling; the 15-minute cadence limits flash writes without requiring extra screen refreshes.
 
@@ -172,9 +180,22 @@ python tools/export-battery.py --port /dev/cu.usbmodem2101 --output battery-2026
 
 Use a fresh output filename each time. The script validates row counts and sequence continuity and saves only battery CSV records. Opening USB can restart the board on this Mac; previously saved readings remain available. A serial terminal can also send `battery` followed by Enter at 115200 baud. Export works in both the dashboard and Wi-Fi setup modes.
 
-The readings will help estimate runtime and tune the voltage curve after normal unplugged use. Charging and load affect voltage, so this remains an estimate rather than a measured state of charge. A sudden low-battery power loss may occur up to one sampling interval after the last saved reading. There is no measured runtime for this firmware yet; its always-awake processor and connected Wi-Fi do not match the factory's one-sync-per-day standby test.
+The readings will help estimate runtime and tune the voltage curve after normal unplugged use. Charging and load affect voltage, so this remains an estimate rather than a measured state of charge. A sudden low-battery power loss may occur up to one sampling interval after the last saved reading. There is no measured full-discharge runtime for 0.5.0 yet. The recorded 0.4.0 discharge is a baseline, not a calibrated capacity model. Export after 3–4 days or when the device gets low; frequent restarts or charge transitions shorten log retention.
 
 
 ## Local USB diagnostics
 
-At 115200 baud, send `next`, `previous`, or `more` followed by Enter to exercise the same navigation actions as the buttons. `refresh` requests a rate-limited background refresh; `battery` exports the saved battery log. These commands only work locally over USB. The display task logs each completed frame's duration and result. Opening the USB port can restart this board on macOS.
+At 115200 baud, send `next`, `previous`, or `more` followed by Enter to exercise the same navigation actions as the buttons. `refresh` requests a rate-limited background refresh; `battery` exports the saved battery log. The `power` command exports bounded JSON diagnostic snapshots. These commands only work locally over USB. The display task logs each completed frame's duration and result. Opening the USB port can restart this board on macOS.
+
+
+## Power diagnostics and next battery trial
+
+`python tools/export-power.py --port /dev/cu.usbmodem101 --output power-2026-09-07.local.json`
+
+Use the currently verified USB port and a fresh output filename. The exporter saves only framed diagnostic JSON. It does not save raw application logs. The existing `tools/export-battery.py` command and CSV format are unchanged.
+
+Power diagnostics contain firmware version, boot ID, reset reason, uptime, time/count of automatic sleep attempts, HTTP body bytes/request duration/failures, and display duration/count/failures. Sleep-attempt time is the ESP-IDF callback's elapsed interval, including entry/exit overhead and rejected attempts; it is not a current measurement or an exact successful-sleep duty cycle. HTTP bytes exclude transport headers and radio overhead. Two small NVS snapshots preserve the latest counters and the previous boot's last saved counters. They are saved with battery samples, not on every request. Storage errors stop diagnostic writes until restart without erasing settings or battery history.
+
+After deployment, first verify all three buttons after an idle period, LED acknowledgement, long presses, USB reconnect/export, unchanged peripheral initialization, and a display update. Confirm quiet-day and live-event deadlines in the serial log. Charge to FULL, unplug and use normally. When low, reconnect and export both battery CSV and power JSON before reflashing. Compare runs by firmware/boot ID and exclude charging samples from discharge estimates. A 3–4 day result remains a goal until this physical trial is complete.
+
+The setup AP now keeps its password in `home_note/setup_psk`, separate from Wi-Fi/calendar settings. The first setup under 0.5.0 establishes it once, because the old RAM-only password is unavailable after restart. Subsequent setup sessions reuse it; the browser form token remains random for each session. A settings/storage error does not silently replace an existing setup password.

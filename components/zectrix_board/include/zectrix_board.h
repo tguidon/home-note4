@@ -48,6 +48,7 @@ public:
     esp_err_t Init();
     bool WaitButton(ZectrixButtonEvent* event, TickType_t timeout);
     void DrainButtons();
+    void SetButtonListener(TaskHandle_t task) { button_listener_ = task; }
 
     RtcPcf8563* rtc() const { return rtc_.get(); }
     ZectrixNfc* nfc() const { return nfc_.get(); }
@@ -70,6 +71,10 @@ private:
     };
 
     static void ButtonTaskEntry(void* arg);
+    struct ButtonInterrupt { ZectrixBoard* board = nullptr; gpio_num_t gpio = GPIO_NUM_NC; };
+    std::array<ButtonInterrupt, 3> button_interrupts_{};
+    static void ButtonIsr(void* arg);
+    void EmitButton(const ZectrixButtonEvent& event);
     void ButtonTask();
     esp_err_t InitPowerAndGpio();
     esp_err_t InitI2c();
@@ -81,6 +86,7 @@ private:
     adc_cali_handle_t adc_cali_ = nullptr;
     QueueHandle_t button_queue_ = nullptr;
     TaskHandle_t button_task_ = nullptr;
+    std::atomic<TaskHandle_t> button_listener_{nullptr};
     std::unique_ptr<RtcPcf8563> rtc_;
     std::unique_ptr<ZectrixNfc> nfc_;
     std::unique_ptr<AudioCodec> audio_;

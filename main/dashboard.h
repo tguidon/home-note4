@@ -16,9 +16,11 @@ struct Weather {
 };
 struct Game {
     std::string away, home, away_score, home_score, state, detail, date;
+    bool completed = false;
 };
 struct Football {
     bool valid = false;
+    bool schedule_complete = true;
     std::string week;
     std::vector<Game> games;
 };

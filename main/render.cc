@@ -24,7 +24,7 @@ std::string Updated(time_t stamp, bool error, time_t now) {
     if (!stamp) return error ? "Unavailable - will retry" : "Waiting for data...";
     tm local = {}; localtime_r(&stamp, &local); char b[48];
     strftime(b, sizeof(b), "%m/%d %I:%M%p", &local);
-    return std::string(error || now - stamp > 7200 ? "STALE | " : "Updated ") + b;
+    return std::string(error || now - stamp > 30 * 3600 ? "STALE | " : "Updated ") + b;
 }
 void Footer(ZectrixCanvas& c, const std::string& source, time_t stamp, bool error, time_t now, bool refreshing = false, bool more = false) {
     c.Line(14, 245, 386, 245);
@@ -49,13 +49,14 @@ void RenderMessage(ZectrixCanvas& c, const char* title, const std::vector<std::s
     Text(c, 18, 74, title, 2);
     int y = 120; for (const auto& line : lines) { Text(c, 18, y, line); y += 23; }
 }
-void RenderDashboard(ZectrixCanvas& c, const Dashboard& d, int page, time_t now, bool online, int battery_percent) {
+void RenderDashboard(ZectrixCanvas& c, const Dashboard& d, int page, time_t now, bool online, int battery_percent,
+                     const std::string& battery_label) {
     c.Clear(); char b[100];
     if (now > 1767225600) {
         tm local = {}; localtime_r(&now, &local); strftime(b, sizeof(b), "%a, %b %d, %Y", &local);
     } else snprintf(b, sizeof(b), "Syncing date...");
     Text(c, 14, 12, b);
-    const std::string battery = battery_percent < 0 ? "--%" :
+    const std::string battery = !battery_label.empty() ? battery_label : battery_percent < 0 ? "--%" :
         std::to_string(std::clamp(battery_percent, 0, 100)) + "%";
     const std::string status = std::string(online ? "ONLINE  " : "OFFLINE  ") + battery;
     const int status_width = c.TextWidth(status.c_str());
@@ -89,7 +90,7 @@ void RenderDashboard(ZectrixCanvas& c, const Dashboard& d, int page, time_t now,
         } else if (agenda.events.empty()) {
             Text(c, 14, 154, !calendar.valid ? (calendar.error ? "Calendar unavailable - will retry" : "Loading your calendar...") :
                 now >= calendar.through ? "Saved agenda expired - reconnect" : calendar.skipped ? "Some events could not be read" : "No events in the next 90 days.");
-            Text(c, 14, 182, calendar.skipped ? "Check Google Calendar for the full agenda." : "Updates every 5 minutes over Wi-Fi.");
+            Text(c, 14, 182, calendar.skipped ? "Check Google Calendar for the full agenda." : "5 min during playutes over Wi-Fi.");
         } else {
             const size_t start = static_cast<size_t>(page) * 3;
             for (size_t i = start; i < std::min(start + 3, agenda.events.size()); ++i) {
@@ -133,7 +134,7 @@ void RenderDashboard(ZectrixCanvas& c, const Dashboard& d, int page, time_t now,
                 Text(c, 282, y + 15 + player * 15, m.scores[player], 1, 104);
             }
         }
-        Footer(c, home::TennisEnded(tennis, now) ? "Tennis: ESPN | US Open season complete" : "Tennis: ESPN | * Winner | Updates every 5 min", d.tennis_updated, d.tennis_error, now, d.refreshing, SectionPages(d, 1, now) > 1);
+        Footer(c, home::TennisEnded(tennis, now) ? "Tennis: ESPN | US Open season complete" : "Tennis: ESPN | * Winner | 5 min during play", d.tennis_updated, d.tennis_error, now, d.refreshing, SectionPages(d, 1, now) > 1);
     } else if (page < SectionStart(d, 3, now)) {
         const auto& f = d.f1;
         const int index = page - SectionStart(d, 2, now);
@@ -182,7 +183,7 @@ void RenderDashboard(ZectrixCanvas& c, const Dashboard& d, int page, time_t now,
             Text(c, 14, y, matchup);
             Text(c, 14, y + 17, g.state == "pre" ? LocalGameTime(g.date) : g.detail);
         }
-        Footer(c, "Scores: ESPN | Polls every 5 min", d.nfl_updated, d.nfl_error, now, d.refreshing, SectionPages(d, 3, now) > 1);
+        Footer(c, "Scores: ESPN | 5 min during play", d.nfl_updated, d.nfl_error, now, d.refreshing, SectionPages(d, 3, now) > 1);
     }
 }
 }

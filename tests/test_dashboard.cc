@@ -111,6 +111,10 @@ int main(int argc, char** argv) {
         Pbm(c, std::string(argv[1]) + "/battery-empty.pbm");
         home::RenderDashboard(c,d,0,now,false);
         Pbm(c, std::string(argv[1]) + "/battery-unknown.pbm");
+        for (const auto* label : {"CHARGING", "FULL", "SETTLING", "~33%", "POWER ERR"}) {
+            home::RenderDashboard(c,d,0,now,true,-1,label);
+            Pbm(c, std::string(argv[1]) + "/power-" + label + ".pbm");
+        }
     }
     std::cout << "PASS: real API fixtures, failure preservation, empty feeds, team mapping, live priority, DST, credentials, and pagination\n";
 }

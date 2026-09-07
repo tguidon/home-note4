@@ -69,6 +69,7 @@ bool ReadMatch(std::string_view text, TennisMatch& out) {
     m.time_valid = cJSON_IsTrue(Get(j.get(), "timeValid"));
     const auto* status = Get(Get(j.get(), "status"), "type");
     m.state = Str(status, "state"); m.detail = Str(status, "shortDetail");
+    m.completed = cJSON_IsTrue(Get(status, "completed"));
     m.round = Str(Get(j.get(), "round"), "displayName");
     m.court = Str(Get(j.get(), "venue"), "court");
     m.division = Str(Get(j.get(), "type"), "text");

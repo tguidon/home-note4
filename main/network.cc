@@ -1,6 +1,9 @@
 #include "network.h"
 #include "dashboard.h"
 #include "settings.h"
+#include "app_events.h"
+#include "power_manager.h"
+#include <algorithm>
 #include <atomic>
 #include <cstdio>
 #include <cstring>
@@ -25,8 +28,40 @@
 
 namespace home {
 namespace {
-std::atomic<bool> connected{false}, reconnect{false};
+std::atomic<bool> connected{false}, reconnect{false}, connecting{false};
 std::string form_token;
+TaskHandle_t reconnect_task = nullptr;
+void Reconnect(void*) {
+    unsigned delay = 1;
+    int64_t next_attempt = 0, connection_deadline = 0;
+    while (true) {
+        if (!reconnect || connected) {
+            delay = 1; next_attempt = 0;
+            ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+            continue;
+        }
+        const auto now = esp_timer_get_time();
+        if (connecting) {
+            if (now >= connection_deadline) {
+                connecting = false;
+                esp_wifi_disconnect(); // Bound association/DHCP stalls.
+            } else {
+                ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(std::max<int64_t>(1, (connection_deadline - now) / 1000)));
+                continue;
+            }
+        }
+        if (now < next_attempt) {
+            ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(std::max<int64_t>(1, (next_attempt - now) / 1000)));
+            continue;
+        }
+        connecting = true;
+        connection_deadline = now + 30000000;
+        if (esp_wifi_connect() != ESP_OK) connecting = false;
+        // Disconnect notifications cannot bypass this monotonic deadline.
+        next_attempt = esp_timer_get_time() + int64_t(delay) * 1000000;
+        delay = std::min(delay * 2, 300u);
+    }
+}
 httpd_handle_t server = nullptr;
 std::string Read(nvs_handle_t h, const char* key) {
     size_t size = 0;
@@ -43,10 +78,14 @@ Settings ReadSettings(nvs_handle_t h) {
     return s;
 }
 void Event(void*, esp_event_base_t base, int32_t id, void*) {
-    if (base == IP_EVENT && id == IP_EVENT_STA_GOT_IP) connected = true;
+    if (base == IP_EVENT && id == IP_EVENT_STA_GOT_IP) {
+        connected = true; connecting = false; WakeApp();
+        if (reconnect_task) xTaskNotifyGive(reconnect_task);
+    }
     if (base == WIFI_EVENT && id == WIFI_EVENT_STA_DISCONNECTED) {
-        connected = false;
-        if (reconnect) esp_wifi_connect();
+        connected = false; connecting = false;
+        WakeApp();
+        if (reconnect && reconnect_task) xTaskNotifyGive(reconnect_task);
     }
 }
 std::string RandomHex() {
@@ -102,7 +141,7 @@ esp_err_t SaveSetup(httpd_req_t* req) {
     // Never log request bodies, Wi-Fi credentials, or calendar links.
     if (err != ESP_OK) return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Could not save settings");
     httpd_resp_set_type(req, "text/plain");
-    httpd_resp_sendstr(req, "Saved. Your NOTE4 is restarting and will try your Wi-Fi. Reconnect your phone to your home network. If connection fails, the screen will show a new setup password.");
+    httpd_resp_sendstr(req, "Saved. Your NOTE4 is restarting and will try your Wi-Fi. Reconnect your phone to your home network. If Wi-Fi is unavailable, the device will retry. Hold OK to reopen setup with the same setup password.");
     xTaskCreate(Restart, "restart", 2048, nullptr, 3, nullptr);
     return ESP_OK;
 }
@@ -119,6 +158,7 @@ esp_err_t InitNetwork() {
     ESP_ERROR_CHECK(esp_wifi_set_storage(WIFI_STORAGE_RAM));
     ESP_ERROR_CHECK(esp_event_handler_register(WIFI_EVENT, ESP_EVENT_ANY_ID, Event, nullptr));
     ESP_ERROR_CHECK(esp_event_handler_register(IP_EVENT, IP_EVENT_STA_GOT_IP, Event, nullptr));
+    if (xTaskCreate(Reconnect, "wifi_reconnect", 3072, nullptr, 2, &reconnect_task) != pdPASS) return ESP_ERR_NO_MEM;
     return ESP_OK;
 }
 bool HasWifiCredentials() {
@@ -142,18 +182,41 @@ bool ConnectWifi(unsigned timeout_ms) {
     ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &cfg));
     reconnect = true;
     ESP_ERROR_CHECK(esp_wifi_start());
-    ESP_ERROR_CHECK(esp_wifi_connect());
+    ESP_ERROR_CHECK(esp_wifi_set_ps(WIFI_PS_MIN_MODEM));
+    xTaskNotifyGive(reconnect_task);
     unsigned waited = 0;
     while (!connected && waited < timeout_ms) { vTaskDelay(pdMS_TO_TICKS(100)); waited += 100; }
     return connected;
 }
 bool WifiConnected() { return connected; }
 esp_err_t StartSetup(SetupInfo& info) {
-    reconnect = false; connected = false; esp_wifi_stop();
+    reconnect = false; connected = false; xTaskNotifyGive(reconnect_task); esp_wifi_stop();
     esp_netif_create_default_wifi_ap();
     uint8_t mac[6]; esp_read_mac(mac, ESP_MAC_WIFI_SOFTAP);
     char name[32]; snprintf(name, sizeof(name), "HomeNote4-%02X%02X", mac[4], mac[5]);
-    info.ssid = name; info.password = RandomHex().substr(0, 12); form_token = RandomHex();
+    info.ssid = name; form_token = RandomHex();
+    nvs_handle_t h;
+    auto err = nvs_open("home_note", NVS_READWRITE, &h);
+    if (err != ESP_OK) return err;
+    size_t password_size = 0;
+    err = nvs_get_str(h, "setup_psk", nullptr, &password_size);
+    if (err == ESP_ERR_NVS_NOT_FOUND) {
+        info.password = RandomHex().substr(0, 12);
+        err = nvs_set_str(h, "setup_psk", info.password.c_str());
+        if (err == ESP_OK) err = nvs_commit(h);
+    } else if (err == ESP_OK) {
+        if (password_size != 13) err = ESP_ERR_INVALID_STATE;
+        else {
+            char password[13] = {};
+            err = nvs_get_str(h, "setup_psk", password, &password_size);
+            if (err == ESP_OK) {
+                info.password.assign(password, 12);
+                if (info.password.find_first_not_of("0123456789abcdef") != std::string::npos) err = ESP_ERR_INVALID_STATE;
+            }
+        }
+    }
+    nvs_close(h);
+    if (err != ESP_OK) return err;
     wifi_config_t cfg = {};
     memcpy(cfg.ap.ssid, info.ssid.data(), info.ssid.size()); cfg.ap.ssid_len = info.ssid.size();
     memcpy(cfg.ap.password, info.password.data(), info.password.size());
@@ -185,6 +248,7 @@ void StartClock() {
 static bool FetchBody(const char* url, std::string& body, size_t max_bytes, const char* accept) {
     // Refuse TLS until a credible clock is available; certificate checking stays enabled.
     if (!connected || time(nullptr) < 1767225600) return false;
+    const auto started = esp_timer_get_time();
     esp_http_client_config_t cfg = {}; cfg.url = url; cfg.timeout_ms = 12000;
     cfg.crt_bundle_attach = esp_crt_bundle_attach;
     // ESPN accepts this standard library compatibility header, but rejects
@@ -192,7 +256,7 @@ static bool FetchBody(const char* url, std::string& body, size_t max_bytes, cons
     cfg.user_agent = "Python-urllib/3.10";
     cfg.buffer_size = 4096;
     cfg.disable_auto_redirect = true;
-    auto h = esp_http_client_init(&cfg); if (!h) return false;
+    auto h = esp_http_client_init(&cfg); if (!h) { CountNetwork(0, 0, false); return false; }
     esp_http_client_set_header(h, "Accept", accept);
     esp_http_client_set_header(h, "Accept-Encoding", "identity");
     bool ok = esp_http_client_open(h, 0) == ESP_OK;
@@ -208,6 +272,7 @@ static bool FetchBody(const char* url, std::string& body, size_t max_bytes, cons
         body.append(buf, n);
     }
     esp_http_client_close(h); esp_http_client_cleanup(h);
+    CountNetwork(body.size(), (esp_timer_get_time() - started) / 1000, ok && !body.empty());
     return ok && !body.empty();
 }
 bool FetchJson(const char* url, std::string& body, size_t max_bytes) {

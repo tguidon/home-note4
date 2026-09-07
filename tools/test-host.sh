@@ -26,3 +26,9 @@ c++ -std=c++17 -Wall -Wextra -Werror -fsanitize=address,undefined -g \
   tests/test_calendar.cc main/calendar.cc main/calendar_rules.cc main/settings.cc main/dashboard.cc main/tennis.cc main/formula_one.cc main/render.cc components/zectrix_demo_ui/zectrix_canvas.cc \
   build-host/cJSON.o -o build-host/test-calendar
 ./build-host/test-calendar build-host/previews
+
+c++ -std=c++17 -Wall -Wextra -Werror -fsanitize=address,undefined -g \
+  -I tests/stubs -I main -I "$json" \
+  tests/test_power_policy.cc main/refresh_policy.cc main/dashboard.cc main/tennis.cc main/formula_one.cc \
+  build-host/cJSON.o -o build-host/test-power-policy
+./build-host/test-power-policy

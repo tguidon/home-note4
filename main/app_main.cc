@@ -1,4 +1,8 @@
 #include "battery_history.h"
+#include "battery_indicator.h"
+#include "power_manager.h"
+#include "app_events.h"
+#include <algorithm>
 #include "feeds.h"
 #include "display_worker.h"
 #include "network.h"
@@ -20,7 +24,9 @@ class HomeNote {
 public:
     void Run() {
         // GPIO17 power latch is established by the official board adapter first.
+        home::RegisterAppTask(xTaskGetCurrentTaskHandle());
         ESP_ERROR_CHECK(board_.Init());
+        board_.SetButtonListener(xTaskGetCurrentTaskHandle());
         zectrix_epd_config_t cfg; zectrix_epd_get_default_config(&cfg);
         ESP_ERROR_CHECK(zectrix_epd_new(&cfg, &epd_));
         ESP_ERROR_CHECK(display_.Init(epd_));
@@ -33,12 +39,15 @@ public:
         const auto history_err = battery_history_.Init();
         if (history_err != ESP_OK) ESP_LOGW("home_note", "battery history init: %s", esp_err_to_name(history_err));
         boot_id_ = esp_random();
+        ESP_ERROR_CHECK(home::InitPowerSaving(boot_id_));
         usb_serial_jtag_driver_config_t usb_config = {1024, 256};
         const auto usb_err = usb_serial_jtag_driver_install(&usb_config);
         usb_commands_ = usb_err == ESP_OK;
         if (usb_commands_) usb_serial_jtag_vfs_use_driver();
         else ESP_LOGW("home_note", "USB battery export unavailable: %s", esp_err_to_name(usb_err));
-        if (!home::HasWifiCredentials() || !home::ConnectWifi(30000)) { Setup(); return; }
+        if (!home::HasWifiCredentials()) { Setup(); return; }
+        // An unavailable router must not leave an unattended setup AP running.
+        home::ConnectWifi(30000);
         home::StartClock(); home::StartFeeds(); dashboard_ready_ = true;
         home::Dashboard data;
         unsigned revision = ~0u;
@@ -47,6 +56,7 @@ public:
         while (true) {
             BatteryTelemetry();
             const auto tick = esp_timer_get_time();
+            if (battery_redraw_) { battery_redraw_ = false; redraw = true; }
             if (led_until_ && tick >= led_until_) { board_.SetPowerLed(false); led_until_ = 0; }
             const time_t now = time(nullptr);
             const int day = home::LocalDateKey(now);
@@ -74,14 +84,17 @@ public:
             detail_page_ %= home::SectionPages(data, section_);
             if (redraw) {
                 online = home::WifiConnected();
-                const auto power = board_.ReadPowerSnapshot();
-                const int battery_percent = power.battery_valid ? power.battery_percent : -1;
+                const int battery_percent = power_.battery_valid ? power_.battery_percent : -1;
                 const int page = home::SectionStart(data, section_) + detail_page_;
-                home::RenderDashboard(canvas_, data, page, now, online, battery_percent);
+                home::RenderDashboard(canvas_, data, page, now, online, battery_percent, battery_label_);
                 Display(); redraw = false;
                 shown_day = day; shown_interval = now / 300;
             }
-            vTaskDelay(pdMS_TO_TICKS(40));
+            // Buttons/feed publications wake immediately. One-second service
+            // checks power transitions; USB stays responsive at 40 ms.
+            int64_t wait_ms = power_.charge.power_present ? 40 : 1000;
+            if (led_until_) wait_ms = std::min(wait_ms, std::max<int64_t>(1, (led_until_ - esp_timer_get_time()) / 1000));
+            ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(wait_ms));
         }
     }
 private:
@@ -118,10 +131,36 @@ private:
         if (err != ESP_OK) ESP_LOGW("home_note", "battery history write: %s", esp_err_to_name(err));
         else ESP_LOGI("home_note", "battery history saved: %u mV, %u%%, external power=%d, charging=%d",
                       record.millivolts, record.percent, power.charge.power_present, power.charge.charging);
-        next_battery_sample_ = esp_timer_get_time() + 900LL * 1000000;
+        const auto stats_err = home::SavePowerStats();
+        if (stats_err != ESP_OK) ESP_LOGW("home_note", "power statistics save: %s", esp_err_to_name(stats_err));
+        last_battery_sample_ = esp_timer_get_time();
+        next_battery_sample_ = last_battery_sample_ + 900LL * 1000000;
     }
     void BatteryTelemetry() {
-        if (esp_timer_get_time() >= next_battery_sample_) RecordBattery();
+        const auto tick = esp_timer_get_time();
+        if (tick >= next_power_read_) {
+            const auto next = board_.ReadPowerSnapshot();
+            const bool transition = next.charge.power_present != power_.charge.power_present ||
+                next.charge.full != power_.charge.full || next.charge.charging != power_.charge.charging;
+            if (transition) transition_pending_ = true;
+            power_ = next;
+            // Setup remains awake; USB-powered operation preserves the console.
+            home::SetUsbPower(!dashboard_ready_ || power_.charge.power_present);
+            const auto label = indicator_.Update(power_.battery_valid ? power_.battery_percent : -1,
+                power_.charge.power_present, power_.charge.charging, power_.charge.full,
+                power_.charge.fault, power_.charge.no_battery, tick / 1000000);
+            if (label != battery_label_) {
+                // Percent-only changes ride the next scheduled redraw; ADC
+                // noise must not start extra e-paper waveforms every second.
+                if (transition || label.back() != '%' || battery_label_.back() != '%') battery_redraw_ = true;
+                battery_label_ = label;
+            }
+            next_power_read_ = tick + 1000000;
+        }
+        if (tick >= next_battery_sample_ || (transition_pending_ && tick >= 10000000 &&
+            tick - last_battery_sample_ >= 60000000)) {
+            RecordBattery(); transition_pending_ = false;
+        }
         if (!usb_commands_) return;
         char incoming[32];
         const int count = usb_serial_jtag_read_bytes(incoming, sizeof(incoming), 0);
@@ -132,6 +171,7 @@ private:
                     const auto err = battery_history_.DumpCsv(stdout);
                     if (err != ESP_OK) ESP_LOGW("home_note", "battery export failed: %s", esp_err_to_name(err));
                 }
+                if (!command_overflow_ && std::strcmp(usb_command_, "power") == 0) home::DumpPowerStats(stdout);
                 if (!command_overflow_ && dashboard_ready_) {
                     if (std::strcmp(usb_command_, "next") == 0 || std::strcmp(usb_command_, "previous") == 0 || std::strcmp(usb_command_, "more") == 0) {
                         const auto data = home::Snapshot();
@@ -180,6 +220,11 @@ private:
     bool dashboard_ready_ = false, navigation_requested_ = false;
     home::BatteryHistory battery_history_;
     uint32_t boot_id_ = 0;
+    home::BatteryIndicator indicator_;
+    ZectrixPowerSnapshot power_;
+    std::string battery_label_ = "--%";
+    bool battery_redraw_ = false, transition_pending_ = false;
+    int64_t next_power_read_ = 0, last_battery_sample_ = 0;
     int64_t next_battery_sample_ = 10000000; // Allow charger signals to settle after boot.
     char usb_command_[32] = {};
     size_t command_length_ = 0;

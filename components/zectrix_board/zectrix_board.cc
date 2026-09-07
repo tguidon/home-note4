@@ -10,6 +10,7 @@
 #include "esp_adc/adc_cali_scheme.h"
 #include "esp_log.h"
 #include "esp_timer.h"
+#include "esp_sleep.h"
 #include "freertos/task.h"
 #include "rtc_pcf8563.h"
 #include "zectrix_board_config.h"
@@ -61,6 +62,7 @@ extern "C" void BoardI2cForcePowerOn() {
 ZectrixBoard::ZectrixBoard() = default;
 
 ZectrixBoard::~ZectrixBoard() {
+    for (const auto& button : kButtons) gpio_isr_handler_remove(button.gpio);
     if (button_task_ != nullptr) {
         vTaskDelete(button_task_);
         button_task_ = nullptr;
@@ -177,6 +179,17 @@ esp_err_t ZectrixBoard::Init() {
         return ESP_ERR_NO_MEM;
     }
 
+    err = gpio_install_isr_service(0);
+    if (err != ESP_OK && err != ESP_ERR_INVALID_STATE) return err;
+    for (size_t i = 0; i < kButtons.size(); ++i) {
+        const auto& button = kButtons[i];
+        button_interrupts_[i] = {this, button.gpio};
+        ESP_ERROR_CHECK(gpio_set_intr_type(button.gpio, GPIO_INTR_LOW_LEVEL));
+        ESP_ERROR_CHECK(gpio_isr_handler_add(button.gpio, ButtonIsr, &button_interrupts_[i]));
+        ESP_ERROR_CHECK(gpio_wakeup_enable(button.gpio, GPIO_INTR_LOW_LEVEL));
+    }
+    ESP_ERROR_CHECK(esp_sleep_enable_gpio_wakeup());
+    xTaskNotifyGive(button_task_);
     InitBatteryAdc();
     const int64_t now_ms = esp_timer_get_time() / 1000;
     charge_status_.Init(CHARGE_DETECT_GPIO, CHARGE_FULL_GPIO, now_ms);
@@ -212,6 +225,19 @@ void ZectrixBoard::ButtonTaskEntry(void* arg) {
     static_cast<ZectrixBoard*>(arg)->ButtonTask();
 }
 
+void ZectrixBoard::ButtonIsr(void* arg) {
+    auto* button = static_cast<ButtonInterrupt*>(arg);
+    // Level interrupts also deliver the held-low press after light sleep.
+    // Arm the opposite level to avoid repeatedly interrupting on a held key.
+    gpio_set_intr_type(button->gpio, gpio_get_level(button->gpio) ? GPIO_INTR_LOW_LEVEL : GPIO_INTR_HIGH_LEVEL);
+    BaseType_t wake = pdFALSE;
+    vTaskNotifyGiveFromISR(button->board->button_task_, &wake);
+    if (wake) portYIELD_FROM_ISR();
+}
+void ZectrixBoard::EmitButton(const ZectrixButtonEvent& event) {
+    if (xQueueSend(button_queue_, &event, 0) == pdTRUE)
+        if (auto task = button_listener_.load()) xTaskNotifyGive(task);
+}
 void ZectrixBoard::ButtonTask() {
     std::array<ButtonState, kButtons.size()> states = {};
     const TickType_t start = xTaskGetTickCount();
@@ -245,7 +271,7 @@ void ZectrixBoard::ButtonTask() {
                             const ZectrixButtonEvent event = {
                                 definition.button,
                                 ZectrixButtonAction::kClick};
-                            xQueueSend(button_queue_, &event, 0);
+                            EmitButton(event);
                         }
                     }
                 } else if (!state.armed) {
@@ -254,7 +280,7 @@ void ZectrixBoard::ButtonTask() {
                            !ClickOnPress(definition.button)) {
                     const ZectrixButtonEvent event = {
                         definition.button, ZectrixButtonAction::kClick};
-                    xQueueSend(button_queue_, &event, 0);
+                    EmitButton(event);
                 }
             }
 
@@ -266,11 +292,17 @@ void ZectrixBoard::ButtonTask() {
                     state.long_sent = true;
                     const ZectrixButtonEvent event = {
                         definition.button, ZectrixButtonAction::kLongPress};
-                    xQueueSend(button_queue_, &event, 0);
+                    EmitButton(event);
                 }
             }
         }
-        vTaskDelay(kButtonPoll);
+        const bool active = std::any_of(states.begin(), states.end(), [](const auto& state) {
+            return state.sampled_level == 0 || state.stable_level == 0 ||
+                   state.sampled_level != state.stable_level;
+        });
+        // Poll only during debounce/held presses; pending notifications retain
+        // edges arriving between the last sample and blocking here.
+        ulTaskNotifyTake(pdTRUE, active ? kButtonPoll : portMAX_DELAY);
     }
 }
 
@@ -340,6 +372,9 @@ ZectrixPowerSnapshot ZectrixBoard::ReadPowerSnapshot() {
     charge_status_.Tick(esp_timer_get_time() / 1000, result.battery_mv,
                         result.battery_valid);
     result.charge = charge_status_.Get();
+    // Wake promptly on charger signal changes; do not alter any power rail.
+    for (const auto pin : {CHARGE_DETECT_GPIO, CHARGE_FULL_GPIO})
+        gpio_wakeup_enable(pin, gpio_get_level(pin) ? GPIO_INTR_LOW_LEVEL : GPIO_INTR_HIGH_LEVEL);
     return result;
 }
 

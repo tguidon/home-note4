@@ -125,7 +125,11 @@ void RefreshFormulaOne(FormulaOne& f, time_t now, std::string& body, F1Fetch fet
     if (now < 1767225600) return;
     tm local{}; localtime_r(&now, &local); const int year = local.tm_year + 1900;
     f.error = false;
-    if (!f.schedule_valid || f.year != year || now - f.schedule_updated >= 3600) {
+    bool session_today = std::any_of(f.sessions.begin(), f.sessions.end(), [now](const auto& s) {
+        return LocalDateKey(s.starts) == LocalDateKey(now);
+    });
+    if (!f.schedule_valid || f.year != year || LocalDateKey(now) != LocalDateKey(f.schedule_updated) ||
+        now - f.schedule_updated >= (session_today ? 3600 : 86400)) {
         std::vector<F1Session> sessions;
         if (FetchSeason(year, body, fetch, sessions)) {
             // Cold starts before the first session can still show last year's
@@ -153,6 +157,8 @@ void RefreshFormulaOne(FormulaOne& f, time_t now, std::string& body, F1Fetch fet
         F1Result result;
         const auto state = fetch(url.c_str(), body) ? ParseF1Result(body, *it, result) : F1ResultState::Invalid;
         if (state == F1ResultState::Published) {
+            if (f.latest.session.round_id != result.session.round_id || f.latest.session.code != result.session.code)
+                f.classification_seen = now;
             f.latest = std::move(result); f.updated = now; break;
         }
         if (state == F1ResultState::Invalid) f.error = true;

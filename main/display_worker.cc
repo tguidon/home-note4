@@ -2,6 +2,8 @@
 #include <cstring>
 #include "esp_log.h"
 #include "esp_timer.h"
+#include "esp_pm.h"
+#include "power_manager.h"
 
 namespace home {
 esp_err_t DisplayWorker::Init(zectrix_epd_handle_t panel) {
@@ -27,6 +29,8 @@ void DisplayWorker::Wait(uint32_t ticket) {
 }
 void DisplayWorker::RunTask(void* self) { static_cast<DisplayWorker*>(self)->Run(); }
 void DisplayWorker::Run() {
+    esp_pm_lock_handle_t waveform_lock;
+    ESP_ERROR_CHECK(esp_pm_lock_create(ESP_PM_NO_LIGHT_SLEEP, 0, "epaper_waveform", &waveform_lock));
     uint32_t drawn = 0;
     while (true) {
         ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
@@ -36,12 +40,15 @@ void DisplayWorker::Run() {
         xSemaphoreGive(mutex_);
         if (ticket == drawn) continue;
         const auto start = esp_timer_get_time();
+        ESP_ERROR_CHECK(esp_pm_lock_acquire(waveform_lock));
         auto err = zectrix_epd_power_on(panel_);
         // Full frames keep text clean between entirely different pages. No
         // additional loading waveform; cached content is the next frame.
         if (err == ESP_OK) err = zectrix_epd_refresh_full_1bpp(panel_, drawing_, sizeof(drawing_));
         const auto off = zectrix_epd_power_off(panel_);
         if (err == ESP_OK) err = off;
+        ESP_ERROR_CHECK(esp_pm_lock_release(waveform_lock));
+        CountDisplay((esp_timer_get_time() - start) / 1000, err == ESP_OK);
         ESP_LOGI("home_display", "frame %lu: %lld ms, %s", static_cast<unsigned long>(ticket),
                  (esp_timer_get_time() - start) / 1000, esp_err_to_name(err));
         drawn = ticket;

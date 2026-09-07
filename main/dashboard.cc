@@ -47,7 +47,8 @@ bool ParseFootball(const std::string& s, Football& out) {
         const auto* competitors = Get(comp, "competitors");
         const auto* status = Get(Get(e, "status"), "type");
         Game g; g.state = Str(status, "state"); g.detail = Str(status, "shortDetail"); g.date = Str(e, "date");
-        if (g.state.empty()) continue;
+        g.completed = cJSON_IsTrue(Get(status, "completed"));
+        if (g.state.empty()) { f.schedule_complete = false; continue; }
         const cJSON* team;
         cJSON_ArrayForEach(team, competitors) {
             auto abbreviation = Str(Get(team, "team"), "abbreviation");
@@ -55,9 +56,10 @@ bool ParseFootball(const std::string& s, Football& out) {
             if (Str(team, "homeAway") == "home") { g.home = abbreviation; g.home_score = score; }
             if (Str(team, "homeAway") == "away") { g.away = abbreviation; g.away_score = score; }
         }
-        if (g.away.empty() || g.home.empty()) continue;
+        if (g.away.empty() || g.home.empty()) { f.schedule_complete = false; continue; }
+        if (!ParseUtcTime(g.date)) f.schedule_complete = false;
         f.games.push_back(g);
-        if (f.games.size() >= 64) break;
+        if (f.games.size() >= 64) { f.schedule_complete = cJSON_GetArraySize(events) <= 64 && f.schedule_complete; break; }
     }
     // An empty schedule is valid. An unrecognizable nonempty feed is not.
     if (cJSON_GetArraySize(events) > 0 && f.games.empty()) return false;
