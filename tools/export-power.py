@@ -23,7 +23,7 @@ def capture(port, timeout=75):
                 records, active = [], True
             elif active and line.startswith("POWER_STATS,"):
                 record = json.loads(line.removeprefix("POWER_STATS,"))
-                if record.get("schema") != 1 or record.get("kind") not in {"current", "latest", "previous"}:
+                if record.get("schema") != 1 or record.get("kind") not in {"current", "latest", "previous", "discharge"}:
                     raise ValueError("Unrecognized power diagnostics")
                 if any(r["kind"] == record["kind"] for r in records):
                     raise ValueError("Duplicate power snapshot")

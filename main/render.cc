@@ -34,8 +34,8 @@ void Footer(ZectrixCanvas& c, const std::string& source, time_t stamp, bool erro
     Text(c, 14, 284, more ? "UP/DOWN Sections | OK More | Hold OK Wi-Fi" : "UP/DOWN Sections | OK Refresh | Hold OK Wi-Fi");
 }
 }
-int SectionPages(const Dashboard& d, int section, time_t now) {
-    if (section == 0) return std::max(1, static_cast<int>((SelectAgenda(d.calendar, now).events.size() + 2) / 3));
+int SectionPages(const Dashboard& d, int section, time_t /*now*/) {
+    if (section == 0) return 1;
     if (section == 1) return std::max(1, static_cast<int>((d.tennis.matches.size() + 2) / 3));
     if (section == 2) return std::max(1, static_cast<int>((d.f1.latest.rows.size() + 3) / 4));
     if (section == 3) return std::max(1, static_cast<int>((d.nfl.games.size() + 3) / 4));
@@ -88,37 +88,45 @@ void RenderDashboard(ZectrixCanvas& c, const Dashboard& d, int page, time_t now,
             Text(c, 14, 95, b);
         } else Text(c, 14, 80, d.weather_error ? "Weather unavailable - retrying" : "Loading local weather...");
         if (w.valid && (!online || d.weather_error || now - d.weather_updated > 7200)) Text(c, 306, 95, "SAVED", 1, 80);
-        c.Line(14, 115, 386, 115);
+        if (const auto* forecast = TomorrowForecast(w, now)) {
+            snprintf(b, sizeof(b), "Tomorrow: H %.0f / L %.0f F | Rain %.0f%%",
+                     forecast->high, forecast->low, forecast->rain);
+            Text(c, 14, 113, b);
+        } else Text(c, 14, 113, "Tomorrow: forecast unavailable");
+        c.Line(14, 134, 386, 134);
         const auto& calendar = d.calendar;
         const auto agenda = SelectAgenda(calendar, now);
-        const int pages = std::max(1, static_cast<int>((agenda.events.size() + 2) / 3));
-        std::string heading = agenda.today ? "TODAY" : "NEXT UP";
-        if (pages > 1) heading += " / " + std::to_string(page + 1) + " OF " + std::to_string(pages);
-        Text(c, 14, 122, calendar.configured ? heading : "YOUR CALENDAR");
-        if (calendar.configured && (!online || calendar.error)) Text(c, 293, 122, "SAVED", 1, 93);
+        const bool later_days = std::any_of(agenda.events.begin(), agenda.events.end(),
+            [now](const auto* event) { return LocalDateKey(event->start) > LocalDateKey(now); });
+        const std::string heading = !calendar.configured ? "YOUR CALENDAR" :
+            agenda.today ? (later_days ? "TODAY + NEXT" : "TODAY") : "NEXT UP";
+        Text(c, 14, 140, heading);
+        std::string note = agenda.additional ? "+" + std::to_string(agenda.additional) + " MORE" : "";
+        if (calendar.skipped) note = "CHECK CALENDAR";
+        if (calendar.configured && (!online || calendar.error)) note += note.empty() ? "SAVED" : " | SAVED";
+        Text(c, 386 - c.TextWidth(note.c_str()), 140, note);
         if (!calendar.configured) {
-            Text(c, 14, 153, "Add your Google Calendar here.");
-            Text(c, 14, 178, "Hold OK to open device setup.");
-            Text(c, 14, 203, "Your private calendar stays private.");
+            Text(c, 14, 173, "Add your Google Calendar here.");
+            Text(c, 14, 198, "Hold OK to open device setup.");
+            Text(c, 14, 223, "Your private calendar stays private.");
         } else if (agenda.events.empty()) {
-            Text(c, 14, 154, !calendar.valid ? (calendar.error ? "Calendar unavailable - will retry" : "Loading your calendar...") :
+            Text(c, 14, 174, !calendar.valid ? (calendar.error ? "Calendar unavailable - will retry" : "Loading your calendar...") :
                 now >= calendar.through ? "Saved agenda expired - reconnect" : calendar.skipped ? "Some events could not be read" : "No events in the next 90 days.");
-            Text(c, 14, 182, calendar.skipped ? "Check Google Calendar for the full agenda." : "Updates every 5 minutes over Wi-Fi.");
+            Text(c, 14, 202, calendar.skipped ? "Check Google Calendar for the full agenda." : "Updates every 5 minutes over Wi-Fi.");
         } else {
-            const size_t start = static_cast<size_t>(page) * 3;
-            for (size_t i = start; i < std::min(start + 3, agenda.events.size()); ++i) {
-                const auto& event = *agenda.events[i]; const int y = 144 + int(i - start) * 32;
-                auto label = CalendarEventTime(event, agenda.today, now);
-                if (agenda.today && !event.all_day) label += event.end > now && event.start <= now ? " | NOW" : event.end <= now ? " | Ended" : "";
+            for (size_t i = 0; i < agenda.events.size(); ++i) {
+                const auto& event = *agenda.events[i]; const int y = 159 + int(i) * 32;
+                const bool today = LocalDateKey(event.start) == LocalDateKey(now);
+                auto label = CalendarEventTime(event, today, now);
+                if (!event.all_day && event.start <= now && event.end > now) label += " | NOW";
                 Text(c, 14, y, label);
                 Text(c, 14, y + 15, event.title);
             }
         }
-        c.Line(14, 245, 386, 245);
-        Text(c, 14, 250, calendar.skipped ? "Some events unsupported - check Google" :
-             calendar.configured ? "Calendar: " + Updated(calendar.updated, calendar.error || !online, now) : "Calendar link: add in device setup");
-        Text(c, 14, 268, "Weather: Open-Meteo (CC BY 4.0)");
-        Text(c, 14, 284, pages > 1 ? "UP/DOWN Sections | OK More | Hold OK Setup" : "UP/DOWN Sections | OK Refresh | Hold OK Setup");
+        c.Line(14, 260, 386, 260);
+        Text(c, 14, 265, Updated(calendar.configured ? calendar.updated : d.weather_updated,
+             !online || (calendar.configured ? calendar.error : d.weather_error), now));
+        Text(c, 14, 284, "UP/DOWN Sections | OK Refresh | Hold OK Setup");
     } else if (page < SectionStart(d, 2, now)) {
         const int index = page - SectionStart(d, 1, now);
         const auto& tennis = d.tennis;

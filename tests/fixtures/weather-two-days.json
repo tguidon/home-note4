@@ -1,0 +1,50 @@
+{
+  "latitude": 41.214756,
+  "longitude": -73.447365,
+  "generationtime_ms": 0.7578134536743164,
+  "utc_offset_seconds": -14400,
+  "timezone": "America/New_York",
+  "timezone_abbreviation": "GMT-4",
+  "elevation": 108.0,
+  "current_units": {
+    "time": "iso8601",
+    "interval": "seconds",
+    "temperature_2m": "\u00b0F",
+    "apparent_temperature": "\u00b0F",
+    "weather_code": "wmo code",
+    "wind_speed_10m": "mp/h"
+  },
+  "current": {
+    "time": "2026-09-05T17:30",
+    "interval": 900,
+    "temperature_2m": 74.0,
+    "apparent_temperature": 74.5,
+    "weather_code": 0,
+    "wind_speed_10m": 5.8
+  },
+  "daily_units": {
+    "time": "iso8601",
+    "temperature_2m_max": "\u00b0F",
+    "temperature_2m_min": "\u00b0F",
+    "precipitation_probability_max": "%"
+  },
+  "daily": {
+    "time": [
+      "2026-09-05",
+      "2026-09-06"
+    ],
+    "temperature_2m_max": [
+      75.6,
+      78.2
+    ],
+    "temperature_2m_min": [
+      63.4,
+      61.4
+    ],
+    "precipitation_probability_max": [
+      9,
+      40
+    ]
+  },
+  "_fixture_note": "Synthetic second-day extension of the captured weather fixture for home layout and parser tests."
+}

@@ -21,6 +21,23 @@ int main(int argc, char** argv) {
     assert(d.weather.valid && d.weather.temperature == 74.0);
     assert(!home::ParseWeather("{}", d.weather) && d.weather.temperature == 74.0);
     assert(!home::ParseWeather(R"({"current":{"temperature_2m":null}})", d.weather));
+    const auto forecast_now = home::ParseUtcTime("2026-09-05T16:00:00Z");
+    assert(!home::TomorrowForecast(d.weather, forecast_now)); // One-day response remains usable.
+    assert(home::ParseWeather(Load("weather-two-days"), d.weather));
+    const auto* tomorrow = home::TomorrowForecast(d.weather, forecast_now);
+    assert(tomorrow && tomorrow->high == 78.2 && tomorrow->low == 61.4 && tomorrow->rain == 40);
+    assert(!home::TomorrowForecast(d.weather, home::ParseUtcTime("2026-09-06T04:00:00Z")));
+    assert(!home::TomorrowForecast(d.weather, 0));
+    auto incomplete = Load("weather-two-days");
+    const auto rain = incomplete.find("\n      40"); assert(rain != std::string::npos);
+    incomplete.replace(rain, 9, "\n      null");
+    home::Weather partial;
+    assert(home::ParseWeather(incomplete, partial) && partial.valid && !partial.tomorrow.valid);
+    auto dst = d.weather;
+    dst.tomorrow.date = "2026-11-02";
+    assert(home::TomorrowForecast(dst, home::ParseUtcTime("2026-11-01T04:30:00Z"))); // 25-hour day.
+    dst.tomorrow.date = "2026-03-09";
+    assert(home::TomorrowForecast(dst, home::ParseUtcTime("2026-03-08T05:30:00Z"))); // 23-hour day.
     assert(home::ParseFootball(Load("nfl"), d.nfl));
     assert(d.nfl.valid && !d.nfl.games.empty());
     auto n = d.nfl.games.size();

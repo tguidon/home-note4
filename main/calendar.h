@@ -18,12 +18,14 @@ struct Calendar {
 struct Agenda {
     bool today = false;
     std::vector<const CalendarEvent*> events;
+    size_t additional = 0;
 };
 // Accept only Google's private ICS endpoint. The URL is a credential.
 bool ValidCalendarUrl(const std::string&);
 // Parse atomically, expanding a bounded 90-day window. Unsupported events are
 // counted and shown as a warning; malformed/truncated feeds preserve prior data.
 bool ParseCalendar(const std::string&, time_t now, Calendar&);
+// One home page: the nearest three ongoing/future events, excluding ended ones.
 Agenda SelectAgenda(const Calendar&, time_t now);
 std::string CalendarEventTime(const CalendarEvent&, bool today, time_t now = time(nullptr));
 }

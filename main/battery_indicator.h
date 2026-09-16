@@ -1,4 +1,5 @@
 #pragma once
+#include "battery_estimate.h"
 #include <algorithm>
 #include <cstdint>
 #include <string>
@@ -10,7 +11,7 @@ inline constexpr char kChargingPrefix[] = "⚡ ";
 class BatteryIndicator {
 public:
     std::string Update(int percent, bool external, bool charging, bool full,
-                       bool fault, bool no_battery, int64_t seconds) {
+                       bool fault, bool no_battery, int64_t seconds, int millivolts = -1) {
         if (external) {
             was_powered_ = true; settled_after_ = seconds + 30; filtered_ = -1;
             if (fault) return "POWER ERR";
@@ -23,6 +24,7 @@ public:
         if (was_powered_) { was_powered_ = false; settled_after_ = seconds + 30; }
         if (percent < 0) return "--%";
         if (seconds < settled_after_) return "SETTLING";
+        if (millivolts > 0) percent = DischargePercent(millivolts);
         percent = std::clamp(percent, 0, 100);
         if (filtered_ < 0) filtered_ = percent * 100;
         else filtered_ = (filtered_ * 7 + percent * 100) / 8;

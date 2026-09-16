@@ -37,11 +37,31 @@ int main(int argc,char** argv) {
         Event("UID:three\r\nDTSTART;TZID=America/New_York:20260907T090000\r\nDURATION:PT1H\r\nSUMMARY:Weekly planning with a long\r\n  title\r\n")+
         Event("UID:overnight\r\nDTSTART:20260905T020000Z\r\nDTEND:20260905T060000Z\r\nSUMMARY:Overnight\r\n"));
     assert(ParseCalendar(simple,now,calendar)&&calendar.valid&&calendar.skipped==0);
-    auto agenda=SelectAgenda(calendar,now);assert(agenda.today&&agenda.events.size()==3);
-    assert(agenda.events.back()->title=="Coffee, catch-up");
+    auto agenda=SelectAgenda(calendar,now);assert(agenda.today&&agenda.events.size()==2);
+    assert(agenda.events.front()->title=="Family day" && agenda.events.back()->title=="Weekly planning with a long title");
     agenda=SelectAgenda(calendar,ParseUtcTime("2026-09-06T16:00:00Z"));
     assert(!agenda.today&&agenda.events.size()==1&&agenda.events[0]->title=="Weekly planning with a long title");
     assert(CalendarEventTime(*agenda.events[0],false)=="Mon 09/07 | 09:00AM");
+    const std::string rolling = Feed(
+        Event("UID:ended\r\nDTSTART:20260905T140000Z\r\nDTEND:20260905T150000Z\r\nSUMMARY:Finished appointment\r\n") +
+        Event("UID:last\r\nDTSTART:20260905T153000Z\r\nDTEND:20260905T163000Z\r\nSUMMARY:Lunch with friends\r\n") +
+        Event("UID:next\r\nDTSTART:20260906T130000Z\r\nDTEND:20260906T140000Z\r\nSUMMARY:Morning hike\r\n") +
+        Event("UID:later\r\nDTSTART:20260907T150000Z\r\nDTEND:20260907T160000Z\r\nSUMMARY:Weekly planning and project catch-up\r\n"));
+    Calendar rolling_calendar; assert(ParseCalendar(rolling, now, rolling_calendar));
+    agenda = SelectAgenda(rolling_calendar, now);
+    assert(agenda.today && agenda.events.size() == 3 && agenda.events.front()->title == "Lunch with friends");
+    assert(agenda.events[1]->title == "Morning hike"); // Next day is visible during today's last event.
+    agenda = SelectAgenda(rolling_calendar, ParseUtcTime("2026-09-05T16:30:00Z"));
+    assert(!agenda.today && agenda.events.size() == 2 && agenda.events.front()->title == "Morning hike");
+    agenda = SelectAgenda(rolling_calendar, ParseUtcTime("2026-09-06T04:00:00Z"));
+    assert(agenda.today && agenda.events.size() == 2);
+    assert(SelectAgenda(rolling_calendar, rolling_calendar.through).events.empty());
+    // A point event remains until its scheduled instant; overnight events remain only while ongoing.
+    Calendar boundaries; boundaries.valid = true; boundaries.through = now + 86400;
+    boundaries.events = {{"Overnight", now - 86400, now + 60, false}, {"Point", now, now, false}};
+    assert(SelectAgenda(boundaries, now).events.size() == 2);
+    assert(SelectAgenda(boundaries, now + 1).events.size() == 1);
+    assert(SelectAgenda(boundaries, now + 60).events.empty());
     auto saved=calendar;
     assert(!ParseCalendar(simple.substr(0,simple.size()-16),now,calendar)&&calendar.events.size()==saved.events.size());
     assert(!ParseCalendar("<html>sign in</html>",now,calendar));
@@ -86,21 +106,25 @@ int main(int argc,char** argv) {
     assert(ParseCalendar(Feed(Event("UID:ranged\r\nDTSTART:20260905T140000Z\r\nRRULE:FREQ=DAILY;COUNT=3\r\nSUMMARY:Series\r\n")+Event("UID:ranged\r\nRECURRENCE-ID;RANGE=THISANDFUTURE:20260906T140000Z\r\nDTSTART:20260906T160000Z\r\nSUMMARY:Shift series\r\n")),now,calendar)&&calendar.skipped&&calendar.events.empty());
     for(int i=0;i<150;++i) { auto damaged=simple;damaged.resize(i);assert(!ParseCalendar(damaged,now,calendar)); }
     if(argc>1) {
-        Dashboard d;assert(ParseWeather(Load("tests/fixtures/weather.json"),d.weather));d.weather_updated=now;
+        Dashboard d;assert(ParseWeather(Load("tests/fixtures/weather-two-days.json"),d.weather));d.weather_updated=now;
         assert(ParseCalendar(simple,now,d.calendar));ZectrixCanvas canvas;
         RenderDashboard(canvas,d,0,now,true,87);Pbm(canvas,std::string(argv[1])+"/calendar-today.pbm");
         RenderDashboard(canvas,d,0,ParseUtcTime("2026-09-06T16:00:00Z"),false,65);Pbm(canvas,std::string(argv[1])+"/calendar-next.pbm");
+        assert(ParseCalendar(rolling,now,d.calendar));
+        RenderDashboard(canvas,d,0,now,true,31);Pbm(canvas,std::string(argv[1])+"/home-last-event.pbm");
+        RenderDashboard(canvas,d,0,ParseUtcTime("2026-09-05T16:30:00Z"),true,31);Pbm(canvas,std::string(argv[1])+"/home-after-events.pbm");
         d.calendar.error=true;RenderDashboard(canvas,d,0,now,true,87);Pbm(canvas,std::string(argv[1])+"/calendar-stale.pbm");
         assert(ParseCalendar(Feed(""),now,d.calendar));RenderDashboard(canvas,d,0,now,true,87);Pbm(canvas,std::string(argv[1])+"/calendar-empty.pbm");
         d.calendar={};d.calendar.configured=true;RenderDashboard(canvas,d,0,now,true,87);Pbm(canvas,std::string(argv[1])+"/calendar-loading.pbm");
         d.calendar={};RenderDashboard(canvas,d,0,now,true,87);Pbm(canvas,std::string(argv[1])+"/calendar-setup.pbm");
         std::string many;
-        for(int i=0;i<8;++i) many+=Event("UID:"+std::to_string(i)+"\r\nDTSTART:20260905T140000Z\r\nSUMMARY:Meeting "+std::to_string(i+1)+"\r\n");
+        for(int i=0;i<8;++i) many+=Event("UID:"+std::to_string(i)+"\r\nDTSTART:20260905T170000Z\r\nSUMMARY:Meeting "+std::to_string(i+1)+"\r\n");
         assert(ParseCalendar(Feed(many),now,d.calendar));
-        assert(SectionPages(d,0,now)==3&&SectionStart(d,1,now)==3&&PageCount(d,now)==6);
-        for(int page=0;page<3;++page) { RenderDashboard(canvas,d,page,now,true,87);Pbm(canvas,std::string(argv[1])+"/calendar-page-"+std::to_string(page)+".pbm"); }
+        assert(SectionPages(d,0,now)==1&&SectionStart(d,1,now)==1&&PageCount(d,now)==4);
+        assert(SelectAgenda(d.calendar,now).events.size()==3&&SelectAgenda(d.calendar,now).additional==5);
+        RenderDashboard(canvas,d,0,now,true,31);Pbm(canvas,std::string(argv[1])+"/home-busy-day.pbm");
         assert(SectionPages(d,0,now+86400)==1);
         d.calendar.skipped=1;RenderDashboard(canvas,d,0,now,true,87);Pbm(canvas,std::string(argv[1])+"/calendar-warning.pbm");
     }
-    std::cout<<"PASS: private URL/settings, recurrence/exceptions, all-day/overnight, DST/timezones, next events, failure preservation, and home pagination\n";
+    std::cout<<"PASS: private URL/settings, recurrence/exceptions, all-day/overnight, DST/timezones, next events, failure preservation, and single-page rolling agenda\n";
 }

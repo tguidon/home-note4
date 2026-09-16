@@ -71,5 +71,21 @@ int main() {
     assert(battery.Update(-1, false, false, false, false, false, 135) == "--%");
     assert(battery.Update(80, true, false, false, true, false, 136) == "POWER ERR");
     assert(battery.Update(80, true, false, false, false, true, 137) == "NO BAT");
+    // Runtime calibration: old 0% (~3.45V) still had about 30 hours left.
+    assert(DischargePercent(3448) == 15 && DischargePercent(3606) == 46);
+    assert(DischargePercent(3000) == 0 && DischargePercent(4200) == 100);
+    assert(DischargePercent(-1) == -1);
+    for (int mv = 2501; mv <= 4500; ++mv) {
+        assert(DischargePercent(mv) >= DischargePercent(mv - 1));
+        assert(DischargePercent(mv) >= 0 && DischargePercent(mv) <= 100);
+    }
+    BatteryIndicator measured;
+    assert(measured.Update(0, false, false, false, false, false, 100, 3448) == "~15%");
+    assert(measured.Update(100, true, true, false, false, false, 101, 4190) == "⚡ ~100%");
+    assert(measured.Update(100, true, false, true, false, false, 102, 4190) == "FULL");
+    assert(measured.Update(0, false, false, false, false, false, 103, 3448) == "SETTLING");
+    assert(measured.Update(0, false, false, false, false, false, 134, 3448) == "~15%");
+    assert(measured.Update(-1, false, false, false, false, false, 135, -1) == "--%");
+    assert(512LL * kBatterySampleSeconds >= 10 * 86400);
     std::cout << "PASS: event-aware deadlines, DST/midnight, completion corrections, partial schedules, retries, and battery charging/settling display\n";
 }

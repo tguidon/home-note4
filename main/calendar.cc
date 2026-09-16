@@ -358,10 +358,13 @@ Agenda SelectAgenda(const Calendar& calendar,time_t now) {
     const time_t today=LocalMidnight(now);
     tm tomorrow{};localtime_r(&today,&tomorrow);++tomorrow.tm_mday;tomorrow.tm_isdst=-1;
     const time_t end=mktime(&tomorrow);
-    for(const auto& e:calendar.events) if(e.start<end&&(e.end>today||(e.start==e.end&&e.start>=today))) result.events.push_back(&e);
-    result.today=!result.events.empty();
-    if(!result.today) {
-        for(const auto& e:calendar.events) if(e.start>=end) result.events.push_back(&e);
+    // The parser keeps occurrences sorted by start time. Fill spare rows with
+    // later days even while today's last appointment is still in progress.
+    for(const auto& e:calendar.events) {
+        if (e.end <= now && !(e.start == e.end && e.start >= now)) continue;
+        if (result.events.size() == 3) { ++result.additional; continue; }
+        result.events.push_back(&e);
+        if (e.start < end) result.today = true;
     }
     return result;
 }

@@ -72,7 +72,7 @@ void CountDisplay(uint32_t ms, bool success) {
     stats.display_ms += ms; ++stats.frames; if (!success) ++stats.frame_failures;
     portEXIT_CRITICAL(&mux);
 }
-esp_err_t SavePowerStats() {
+esp_err_t SavePowerStats(bool external_power) {
     if (!storage_ok) return ESP_ERR_INVALID_STATE;
     nvs_handle_t h; auto err = nvs_open("power_v1", NVS_READWRITE, &h);
     if (err == ESP_OK) {
@@ -82,6 +82,9 @@ esp_err_t SavePowerStats() {
         if (nvs_get_blob(h, "latest", &previous, &size) == ESP_OK && size == sizeof(previous) && previous.boot_id != copy.boot_id)
             err = nvs_set_blob(h, "previous", &previous, sizeof(previous));
         if (err == ESP_OK) err = nvs_set_blob(h, "latest", &copy, sizeof(copy));
+        // USB resets can rotate both latest/previous before inspection. Keep the
+        // last battery-powered snapshot until another discharge sample replaces it.
+        if (err == ESP_OK && !external_power) err = nvs_set_blob(h, "discharge", &copy, sizeof(copy));
         if (err == ESP_OK) err = nvs_commit(h);
         nvs_close(h);
     }
@@ -93,7 +96,7 @@ void DumpPowerStats(FILE* output) {
     Print(output, "current", Snapshot());
     nvs_handle_t h;
     if (nvs_open("power_v1", NVS_READONLY, &h) == ESP_OK) {
-        for (const char* key : {"latest", "previous"}) {
+        for (const char* key : {"latest", "previous", "discharge"}) {
             Stats saved{}; size_t size = sizeof(saved);
             if (nvs_get_blob(h, key, &saved, &size) == ESP_OK && size == sizeof(saved) && saved.schema == 1) Print(output, key, saved);
         }

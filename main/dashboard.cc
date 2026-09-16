@@ -17,8 +17,8 @@ bool Number(const cJSON* p, double& out) {
     if (!cJSON_IsNumber(p) || !std::isfinite(p->valuedouble)) return false;
     out = p->valuedouble; return true;
 }
-bool Daily(const cJSON* p, const char* k, double& out) {
-    return Number(cJSON_GetArrayItem(Get(p, k), 0), out);
+bool Daily(const cJSON* p, const char* k, double& out, int index = 0) {
+    return Number(cJSON_GetArrayItem(Get(p, k), index), out);
 }
 int Priority(const Game& g) { return g.state == "in" ? 0 : g.state == "pre" ? 1 : 2; }
 }
@@ -34,7 +34,24 @@ bool ParseWeather(const std::string& s, Weather& out) {
         !Daily(d, "precipitation_probability_max", w.rain)) return false;
     w.observed = Str(c, "time");
     if (w.observed.empty() || code < 0 || code > 99) return false;
+    auto& tomorrow = w.tomorrow;
+    tomorrow.date = Str(cJSON_GetArrayItem(Get(d, "time"), 1));
+    tomorrow.valid = !tomorrow.date.empty() &&
+        Daily(d, "temperature_2m_max", tomorrow.high, 1) &&
+        Daily(d, "temperature_2m_min", tomorrow.low, 1) &&
+        Daily(d, "precipitation_probability_max", tomorrow.rain, 1) &&
+        tomorrow.low <= tomorrow.high && tomorrow.rain >= 0 && tomorrow.rain <= 100;
     w.code = static_cast<int>(code); w.valid = true; out = w; return true;
+}
+const DailyWeather* TomorrowForecast(const Weather& weather, time_t now) {
+    if (!weather.valid || !weather.tomorrow.valid || now < 1767225600) return nullptr;
+    tm day{}; localtime_r(&now, &day);
+    day.tm_hour = day.tm_min = day.tm_sec = 0;
+    ++day.tm_mday; day.tm_isdst = -1;
+    if (mktime(&day) == -1) return nullptr;
+    char date[16]; strftime(date, sizeof(date), "%Y-%m-%d", &day);
+    // Cached data must not be relabeled as tomorrow after local midnight.
+    return weather.tomorrow.date == date ? &weather.tomorrow : nullptr;
 }
 bool ParseFootball(const std::string& s, Football& out) {
     auto j = Parse(s); if (!j) return false;

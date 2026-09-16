@@ -131,10 +131,10 @@ private:
         if (err != ESP_OK) ESP_LOGW("home_note", "battery history write: %s", esp_err_to_name(err));
         else ESP_LOGI("home_note", "battery history saved: %u mV, %u%%, external power=%d, charging=%d",
                       record.millivolts, record.percent, power.charge.power_present, power.charge.charging);
-        const auto stats_err = home::SavePowerStats();
+        const auto stats_err = home::SavePowerStats(power.charge.power_present);
         if (stats_err != ESP_OK) ESP_LOGW("home_note", "power statistics save: %s", esp_err_to_name(stats_err));
         last_battery_sample_ = esp_timer_get_time();
-        next_battery_sample_ = last_battery_sample_ + 900LL * 1000000;
+        next_battery_sample_ = last_battery_sample_ + int64_t(home::kBatterySampleSeconds) * 1000000;
     }
     void BatteryTelemetry() {
         const auto tick = esp_timer_get_time();
@@ -148,7 +148,8 @@ private:
             home::SetUsbPower(!dashboard_ready_ || power_.charge.power_present);
             const auto label = indicator_.Update(power_.battery_valid ? power_.battery_percent : -1,
                 power_.charge.power_present, power_.charge.charging, power_.charge.full,
-                power_.charge.fault, power_.charge.no_battery, tick / 1000000);
+                power_.charge.fault, power_.charge.no_battery, tick / 1000000,
+                power_.battery_valid ? power_.battery_mv : -1);
             if (label != battery_label_) {
                 // Percent-only changes ride the next scheduled redraw; ADC
                 // noise must not start extra e-paper waveforms every second.

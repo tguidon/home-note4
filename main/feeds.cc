@@ -18,7 +18,7 @@ Dashboard shared;
 std::atomic<bool> refresh{false};
 TaskHandle_t feed_task = nullptr;
 std::atomic<unsigned> published_revision{0};
-constexpr const char* kWeather = "https://api.open-meteo.com/v1/forecast?latitude=41.2018&longitude=-73.4383&current=temperature_2m,apparent_temperature,weather_code,wind_speed_10m&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max&temperature_unit=fahrenheit&wind_speed_unit=mph&timezone=America%2FNew_York&forecast_days=1";
+constexpr const char* kWeather = "https://api.open-meteo.com/v1/forecast?latitude=41.2018&longitude=-73.4383&current=temperature_2m,apparent_temperature,weather_code,wind_speed_10m&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max&temperature_unit=fahrenheit&wind_speed_unit=mph&timezone=America%2FNew_York&forecast_days=2";
 constexpr const char* kNfl = "https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard?limit=100";
 void Publish(Dashboard& d) {
     ++d.revision;
