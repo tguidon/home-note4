@@ -16,9 +16,14 @@ public:
             was_powered_ = true; settled_after_ = seconds + 30; filtered_ = -1;
             if (fault) return "POWER ERR";
             if (no_battery) return "NO BAT";
-            if (full) return "FULL";
-            if (charging) return std::string(kChargingPrefix) + (percent < 0 ? "--%" :
-                "~" + std::to_string(std::clamp(percent, 0, 100)) + "%");
+            if (full) return "100% FULL";
+            if (charging) {
+                // One voltage mapping in both modes avoids formula-only jumps.
+                // Charging voltage is still biased: only the full signal earns 100%.
+                if (percent >= 0 && millivolts > 0) percent = DischargePercent(millivolts);
+                return std::string(kChargingPrefix) + (percent < 0 ? "--%" :
+                    "~" + std::to_string(std::clamp(percent, 0, 99)) + "%");
+            }
             return "USB";
         }
         if (was_powered_) { was_powered_ = false; settled_after_ = seconds + 30; }

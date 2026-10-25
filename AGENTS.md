@@ -10,3 +10,5 @@
 - September 11, 2026: Home stays one page with current/tomorrow weather and the nearest ongoing/upcoming calendar events. Remove ended events and fill remaining space with later days; remove the home data-source footer but keep last refresh. Develop this update on a separate branch and leave the running device alone during its battery trial.
 
 - September 15, 2026: battery trial complete; owner authorizes battery improvements, squash merge to main, and deployment including Home changes. Raw CSV percentages keep the original board formula; the on-screen discharge estimate now uses the provisional device curve. Preserve the exported run before flashing. Keep peripheral rails and existing feed cadences unchanged.
+
+- October 25, 2026: remove the entire US Open scene and its requests. Keep Home → F1 → NFL. Charging estimates use the same provisional voltage curve as battery estimates, capped at 99%; only the charger completion signal shows `100% FULL`. Preserve raw CSV percentages.

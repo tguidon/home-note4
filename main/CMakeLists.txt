@@ -1,5 +1,5 @@
 idf_component_register(
-    SRCS "app_events.cc" "power_manager.cc" "refresh_policy.cc" "calendar.cc" "calendar_rules.cc" "settings.cc" "app_main.cc" "battery_history.cc" "tennis.cc" "formula_one.cc" "display_worker.cc" "dashboard.cc" "render.cc" "network.cc" "feeds.cc"
+    SRCS "app_events.cc" "power_manager.cc" "refresh_policy.cc" "calendar.cc" "calendar_rules.cc" "settings.cc" "app_main.cc" "battery_history.cc" "formula_one.cc" "display_worker.cc" "dashboard.cc" "render.cc" "network.cc" "feeds.cc"
          "../components/zectrix_demo_ui/zectrix_canvas.cc"
     INCLUDE_DIRS "." "../components/zectrix_demo_ui/include" "../components/zectrix_demo_ui/font"
     REQUIRES esp_pm esp_app_format esp_driver_usb_serial_jtag zectrix_board zectrix_epd esp_timer esp_wifi esp_event esp_netif

@@ -120,7 +120,7 @@ int main(int argc,char** argv) {
         std::string many;
         for(int i=0;i<8;++i) many+=Event("UID:"+std::to_string(i)+"\r\nDTSTART:20260905T170000Z\r\nSUMMARY:Meeting "+std::to_string(i+1)+"\r\n");
         assert(ParseCalendar(Feed(many),now,d.calendar));
-        assert(SectionPages(d,0,now)==1&&SectionStart(d,1,now)==1&&PageCount(d,now)==4);
+        assert(SectionPages(d,0,now)==1&&SectionStart(d,1,now)==1&&PageCount(d,now)==3);
         assert(SelectAgenda(d.calendar,now).events.size()==3&&SelectAgenda(d.calendar,now).additional==5);
         RenderDashboard(canvas,d,0,now,true,31);Pbm(canvas,std::string(argv[1])+"/home-busy-day.pbm");
         assert(SectionPages(d,0,now+86400)==1);

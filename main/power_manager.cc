@@ -6,6 +6,7 @@
 #include "freertos/FreeRTOS.h"
 #include "nvs.h"
 #include <cinttypes>
+#include <cstddef>
 #include <cstring>
 #include <initializer_list>
 
@@ -16,7 +17,17 @@ struct Stats {
     char firmware[16] = {};
     uint64_t uptime_us = 0, sleep_attempt_us = 0, network_bytes = 0, network_ms = 0, display_ms = 0;
     uint32_t sleep_attempts = 0, requests = 0, request_failures = 0, frames = 0, frame_failures = 0;
+    uint64_t frame_started_us = 0, last_frame_us = 0;
+    DisplayMetadata last_frame;
 };
+bool ReadStats(nvs_handle_t h, const char* key, Stats& value) {
+    size_t size = 0;
+    if (nvs_get_blob(h, key, nullptr, &size) != ESP_OK) return false;
+    // v0.6 counter prefix remains byte-compatible; absent frame data stays zero.
+    if (size != sizeof(Stats) && size != offsetof(Stats, frame_started_us)) return false;
+    value = {};
+    return nvs_get_blob(h, key, &value, &size) == ESP_OK && value.schema == 1;
+}
 Stats stats;
 portMUX_TYPE mux = portMUX_INITIALIZER_UNLOCKED;
 esp_pm_lock_handle_t usb_lock = nullptr;
@@ -39,9 +50,12 @@ void Print(FILE* output, const char* kind, const Stats& s) {
         ",\"reset_reason\":%" PRIu32 ",\"uptime_us\":%" PRIu64 ",\"sleep_attempt_us\":%" PRIu64
         ",\"sleep_attempts\":%" PRIu32 ",\"network_bytes\":%" PRIu64 ",\"network_ms\":%" PRIu64
         ",\"requests\":%" PRIu32 ",\"request_failures\":%" PRIu32 ",\"frames\":%" PRIu32
-        ",\"frame_failures\":%" PRIu32 ",\"display_ms\":%" PRIu64 "}\n",
+        ",\"frame_failures\":%" PRIu32 ",\"display_ms\":%" PRIu64
+        ",\"frame_started_us\":%" PRIu64 ",\"last_frame_us\":%" PRIu64
+        ",\"last_frame_mv\":%" PRId32 ",\"last_frame_label\":\"%.23s\"}\n",
         kind, s.firmware, s.boot_id, s.reset_reason, s.uptime_us, s.sleep_attempt_us, s.sleep_attempts,
-        s.network_bytes, s.network_ms, s.requests, s.request_failures, s.frames, s.frame_failures, s.display_ms);
+        s.network_bytes, s.network_ms, s.requests, s.request_failures, s.frames, s.frame_failures, s.display_ms, s.frame_started_us, s.last_frame_us,
+        s.last_frame.millivolts, s.last_frame.battery_label);
 }
 }
 esp_err_t InitPowerSaving(uint32_t boot_id) {
@@ -67,9 +81,15 @@ void CountNetwork(uint64_t bytes, uint32_t ms, bool success) {
     if (!success) ++stats.request_failures;
     portEXIT_CRITICAL(&mux);
 }
-void CountDisplay(uint32_t ms, bool success) {
+void StartDisplayAttempt() {
+    const auto now = esp_timer_get_time();
+    portENTER_CRITICAL(&mux); stats.frame_started_us = now; portEXIT_CRITICAL(&mux);
+}
+void CountDisplay(uint32_t ms, bool success, const DisplayMetadata& metadata) {
+    const auto now = esp_timer_get_time();
     portENTER_CRITICAL(&mux);
     stats.display_ms += ms; ++stats.frames; if (!success) ++stats.frame_failures;
+    else { stats.last_frame_us = now; stats.last_frame = metadata; }
     portEXIT_CRITICAL(&mux);
 }
 esp_err_t SavePowerStats(bool external_power) {
@@ -78,8 +98,8 @@ esp_err_t SavePowerStats(bool external_power) {
     if (err == ESP_OK) {
         const auto copy = Snapshot();
         // Keep the previous boot's last saved counters after a USB reset.
-        Stats previous{}; size_t size = sizeof(previous);
-        if (nvs_get_blob(h, "latest", &previous, &size) == ESP_OK && size == sizeof(previous) && previous.boot_id != copy.boot_id)
+        Stats previous{};
+        if (ReadStats(h, "latest", previous) && previous.boot_id != copy.boot_id)
             err = nvs_set_blob(h, "previous", &previous, sizeof(previous));
         if (err == ESP_OK) err = nvs_set_blob(h, "latest", &copy, sizeof(copy));
         // USB resets can rotate both latest/previous before inspection. Keep the
@@ -97,8 +117,8 @@ void DumpPowerStats(FILE* output) {
     nvs_handle_t h;
     if (nvs_open("power_v1", NVS_READONLY, &h) == ESP_OK) {
         for (const char* key : {"latest", "previous", "discharge"}) {
-            Stats saved{}; size_t size = sizeof(saved);
-            if (nvs_get_blob(h, key, &saved, &size) == ESP_OK && size == sizeof(saved) && saved.schema == 1) Print(output, key, saved);
+            Stats saved{};
+            if (ReadStats(h, key, saved)) Print(output, key, saved);
         }
         nvs_close(h);
     }

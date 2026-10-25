@@ -5,7 +5,8 @@ namespace home {
 // Provisional voltage-to-remaining-runtime curve for this device and workload.
 // Lower knots use the Sept 7–15, 2026 run; the overwritten upper range is an
 // interpolation to the existing full-voltage anchor, not measured capacity.
-// See docs/battery-review-2026-09-15.md. Never use this curve for charging.
+// See docs/battery-review-2026-09-15.md. When used during charging this is
+// only a voltage proxy, capped below 100 until the charger reports completion.
 inline int DischargePercent(int millivolts) {
     if (millivolts <= 0) return -1;
     struct Point { int mv, percent; };

@@ -1,6 +1,7 @@
 #pragma once
 #include <atomic>
 #include <cstdint>
+#include "display_metadata.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include "freertos/task.h"
@@ -12,7 +13,7 @@ namespace home {
 class DisplayWorker {
 public:
     esp_err_t Init(zectrix_epd_handle_t panel);
-    uint32_t Submit(const uint8_t* frame);
+    uint32_t Submit(const uint8_t* frame, const DisplayMetadata& metadata = {});
     void Wait(uint32_t ticket);
 private:
     static void RunTask(void* self);
@@ -22,7 +23,9 @@ private:
     TaskHandle_t task_ = nullptr;
     uint8_t pending_[ZECTRIX_EPD_1BPP_FRAME_BYTES] = {};
     uint8_t drawing_[ZECTRIX_EPD_1BPP_FRAME_BYTES] = {};
+    DisplayMetadata pending_metadata_;
     uint32_t requested_ = 0;
+    std::atomic<uint32_t> successful_{0};
     std::atomic<uint32_t> finished_{0};
 };
 }

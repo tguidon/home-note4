@@ -30,7 +30,7 @@ public:
         zectrix_epd_config_t cfg; zectrix_epd_get_default_config(&cfg);
         ESP_ERROR_CHECK(zectrix_epd_new(&cfg, &epd_));
         ESP_ERROR_CHECK(display_.Init(epd_));
-        Message("Starting up", {"Weather and your calendar", "US Open, Formula 1 and NFL", "Connecting to your home..."});
+        Message("Starting up", {"Weather and your calendar", "Formula 1 and NFL", "Connecting to your home..."});
         auto err = home::InitNetwork();
         if (err != ESP_OK) {
             Message("Storage needs attention", {"Settings could not be read.", "Nothing has been erased.", "Check the USB serial log."});
@@ -63,12 +63,11 @@ public:
             if (day != shown_day) detail_page_ = 0;
             if (home::FeedRevision() != revision) {
                 auto next = home::Snapshot();
-                if (section_ == 2 && (next.f1.latest.session.round_id != data.f1.latest.session.round_id ||
+                if (section_ == 1 && (next.f1.latest.session.round_id != data.f1.latest.session.round_id ||
                                      next.f1.latest.session.code != data.f1.latest.session.code)) detail_page_ = 0;
                 data = std::move(next); revision = data.revision; redraw = true;
             }
             if (online != home::WifiConnected() || day != shown_day || now / 300 != shown_interval) redraw = true;
-            if (home::TennisEnded(data.tennis, now)) data.tennis.matches.clear();
             // Consume queued taps before drawing, so fast navigation goes directly
             // to the latest selected section instead of replaying old screens.
             ZectrixButtonEvent event;
@@ -87,7 +86,10 @@ public:
                 const int battery_percent = power_.battery_valid ? power_.battery_percent : -1;
                 const int page = home::SectionStart(data, section_) + detail_page_;
                 home::RenderDashboard(canvas_, data, page, now, online, battery_percent, battery_label_);
-                Display(); redraw = false;
+                home::DisplayMetadata metadata;
+                metadata.millivolts = power_.battery_valid ? power_.battery_mv : -1;
+                snprintf(metadata.battery_label, sizeof(metadata.battery_label), "%s", battery_label_.c_str());
+                display_.Submit(canvas_.data(), metadata); redraw = false;
                 shown_day = day; shown_interval = now / 300;
             }
             // Buttons/feed publications wake immediately. One-second service
@@ -104,7 +106,7 @@ private:
     }
     void Navigate(ZectrixButton button, const home::Dashboard& data) {
         if (button == ZectrixButton::kUp || button == ZectrixButton::kDown) {
-            section_ = (section_ + (button == ZectrixButton::kUp ? 3 : 1)) % 4;
+            section_ = home::NextSection(section_, button == ZectrixButton::kUp);
             detail_page_ = 0;
         } else if (home::SectionPages(data, section_) > 1) {
             detail_page_ = (detail_page_ + 1) % home::SectionPages(data, section_);

@@ -13,12 +13,13 @@ esp_err_t DisplayWorker::Init(zectrix_epd_handle_t panel) {
     if (xTaskCreate(RunTask, "home_display", 4096, this, 3, &task_) != pdPASS) return ESP_ERR_NO_MEM;
     return ESP_OK;
 }
-uint32_t DisplayWorker::Submit(const uint8_t* frame) {
+uint32_t DisplayWorker::Submit(const uint8_t* frame, const DisplayMetadata& metadata) {
     xSemaphoreTake(mutex_, portMAX_DELAY);
-    if (requested_ && std::memcmp(pending_, frame, sizeof(pending_)) == 0) {
+    if (ReuseFrame(std::memcmp(pending_, frame, sizeof(pending_)) == 0, requested_, finished_.load(), successful_.load())) {
         const auto ticket = requested_; xSemaphoreGive(mutex_); return ticket;
     }
     memcpy(pending_, frame, sizeof(pending_));
+    pending_metadata_ = metadata;
     const auto ticket = ++requested_;
     xSemaphoreGive(mutex_);
     xTaskNotifyGive(task_);
@@ -36,10 +37,12 @@ void DisplayWorker::Run() {
         ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
         xSemaphoreTake(mutex_, portMAX_DELAY);
         const uint32_t ticket = requested_;
+        const auto metadata = pending_metadata_;
         memcpy(drawing_, pending_, sizeof(drawing_));
         xSemaphoreGive(mutex_);
         if (ticket == drawn) continue;
         const auto start = esp_timer_get_time();
+        StartDisplayAttempt();
         ESP_ERROR_CHECK(esp_pm_lock_acquire(waveform_lock));
         auto err = zectrix_epd_power_on(panel_);
         // Full frames keep text clean between entirely different pages. No
@@ -48,10 +51,11 @@ void DisplayWorker::Run() {
         const auto off = zectrix_epd_power_off(panel_);
         if (err == ESP_OK) err = off;
         ESP_ERROR_CHECK(esp_pm_lock_release(waveform_lock));
-        CountDisplay((esp_timer_get_time() - start) / 1000, err == ESP_OK);
+        CountDisplay((esp_timer_get_time() - start) / 1000, err == ESP_OK, metadata);
         ESP_LOGI("home_display", "frame %lu: %lld ms, %s", static_cast<unsigned long>(ticket),
                  (esp_timer_get_time() - start) / 1000, esp_err_to_name(err));
         drawn = ticket;
+        if (err == ESP_OK) successful_ = ticket;
         finished_ = ticket;
     }
 }

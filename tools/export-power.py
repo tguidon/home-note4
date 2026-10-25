@@ -18,7 +18,7 @@ def capture(port, timeout=75):
             if time.monotonic() >= next_request and not active:
                 device.write(b"\npower\n")
                 next_request = time.monotonic() + 8
-            line = device.readline(4096).decode("ascii", errors="ignore").strip()
+            line = device.readline(4096).decode("utf-8", errors="replace").strip()
             if line == "POWER_BEGIN,1":
                 records, active = [], True
             elif active and line.startswith("POWER_STATS,"):

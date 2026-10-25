@@ -22,6 +22,10 @@ bool Daily(const cJSON* p, const char* k, double& out, int index = 0) {
 }
 int Priority(const Game& g) { return g.state == "in" ? 0 : g.state == "pre" ? 1 : 2; }
 }
+int LocalDateKey(time_t now) {
+    tm local{}; localtime_r(&now, &local);
+    return (local.tm_year + 1900) * 10000 + (local.tm_mon + 1) * 100 + local.tm_mday;
+}
 bool ParseWeather(const std::string& s, Weather& out) {
     auto j = Parse(s); if (!j) return false;
     const auto* c = Get(j.get(), "current"); const auto* d = Get(j.get(), "daily");

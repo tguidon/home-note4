@@ -42,25 +42,25 @@ void Run(void*) {
     const std::string calendar_url = CalendarUrl();
     d.calendar.configured = !calendar_url.empty();
     Publish(d);
-    Deadline weather, f1, nfl, tennis, calendar;
-    CompletionCheck nfl_completion, tennis_completion;
+    Deadline weather, f1, nfl, calendar;
+    CompletionCheck nfl_completion;
     int64_t last_manual = -60000000;
     int requested_day = 0;
     std::string body;
-    // Allocate before HTTP traffic fragments PSRAM; tennis needs a large contiguous buffer.
-    body.reserve(3 * 1024 * 1024);
+    // Calendar ICS may need a large contiguous buffer; reserve before TLS traffic.
+    body.reserve(calendar_url.empty() ? 768 * 1024 : 3 * 1024 * 1024);
     while (true) {
         const auto tick = esp_timer_get_time();
         const time_t now = time(nullptr);
         const bool manual = refresh.exchange(false) && tick - last_manual >= 60000000;
         if (manual) {
-            weather.at = f1.at = nfl.at = tennis.at = calendar.at = 0;
+            weather.at = f1.at = nfl.at = calendar.at = 0;
             last_manual = tick;
         }
         if (WifiConnected() && now >= 1767225600) {
             const int day = LocalDateKey(now);
             if (day != requested_day) {
-                weather.at = tennis.at = f1.at = nfl.at = calendar.at = 0;
+                weather.at = f1.at = nfl.at = calendar.at = 0;
                 requested_day = day;
             }
             bool changed = false;
@@ -106,28 +106,12 @@ void Run(void*) {
                          (nfl.at - esp_timer_get_time()) / 1000000);
                 changed = true;
             }
-            if (tick >= tennis.at) {
-                char url[160];
-                snprintf(url, sizeof(url), "https://site.api.espn.com/apis/site/v2/sports/tennis/atp/scoreboard?dates=%08d", LocalDateKey(time(nullptr)));
-                const bool fetched = FetchJson(url, body, 3 * 1024 * 1024);
-                const char* parse_error = "HTTP request incomplete";
-                const bool ok = fetched && ParseTennis(body, time(nullptr), d.tennis, &parse_error);
-                if (!ok) ESP_LOGW("feeds", "tennis failure: %s", parse_error);
-                d.tennis_error = !ok; if (ok) d.tennis_updated = time(nullptr);
-                const bool complete = !d.tennis.matches.empty() && std::all_of(d.tennis.matches.begin(), d.tennis.matches.end(), [](const auto& m) { return m.completed; });
-                auto due = NextTennisRefresh(d.tennis, time(nullptr));
-                if (ok) due = tennis_completion.Apply(due, time(nullptr), complete);
-                tennis.Schedule(ok, due);
-                ESP_LOGI("feeds", "US Open: %s; next check in %lld seconds", ok ? "updated" : "unavailable",
-                         (tennis.at - esp_timer_get_time()) / 1000000);
-                changed = true;
-            }
             // One publication per completed batch avoids redundant updating frames.
             if (changed) Publish(d);
         }
         int64_t wait_us = 30000000; // Also covers initial time sync / reconnect.
         if (WifiConnected() && now >= 1767225600) {
-            int64_t earliest = std::min({weather.at, f1.at, nfl.at, tennis.at,
+            int64_t earliest = std::min({weather.at, f1.at, nfl.at,
                                        calendar_url.empty() ? INT64_MAX : calendar.at});
             earliest = std::min(earliest, esp_timer_get_time() + int64_t(NextLocalDay(time(nullptr)) - time(nullptr)) * 1000000);
             wait_us = std::clamp<int64_t>(earliest - esp_timer_get_time(), 1000, 60000000);

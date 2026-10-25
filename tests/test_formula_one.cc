@@ -34,7 +34,7 @@ bool Fetch(const char* url, std::string& body) {
 std::string Url(const F1Session& s) { return "https://api.jolpi.ca/f1/alpha/results/" + s.round_id + "/" + s.code + "/"; }
 void Preview(const FormulaOne& f, time_t now, const std::string& file, int detail = 0) {
     Dashboard d; d.f1 = f; ZectrixCanvas c;
-    RenderDashboard(c, d, SectionStart(d, 2) + detail, now, true, 87);
+    RenderDashboard(c, d, SectionStart(d, 1) + detail, now, true, 87);
     std::ofstream out(file, std::ios::binary); out << "P4\n400 300\n";
     for (size_t i = 0; i < c.size(); ++i) out.put(static_cast<char>(~c.data()[i]));
 }
@@ -88,8 +88,8 @@ int main(int argc, char** argv) {
     }), Session(f, "Q"), f.latest) == F1ResultState::Invalid);
     assert(f.latest.rows.size() == q.rows.size());
     Dashboard d; d.f1 = f;
-    assert(SectionPages(d, 2) == 6 && SectionStart(d, 3) == SectionStart(d, 2) + 6);
-    assert(PageCount(d) == 9);
+    assert(SectionPages(d, 1) == 6 && SectionStart(d, 2) == SectionStart(d, 1) + 6);
+    assert(PageCount(d) == 8);
     // Deterministic fake HTTP: a cold boot finds the newest published session.
     responses["https://api.jolpi.ca/f1/alpha/schedules/2026/"] = Load("schedule");
     for (const auto& c : {"FP1", "FP2", "FP3", "Q", "R"}) responses[Url(Session(f, c))] = Load(c);

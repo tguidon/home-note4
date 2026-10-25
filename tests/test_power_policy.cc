@@ -1,5 +1,6 @@
 #include "refresh_policy.h"
 #include "battery_indicator.h"
+#include "display_metadata.h"
 #include <cassert>
 #include <cstdlib>
 #include <iostream>
@@ -39,15 +40,6 @@ int main() {
     assert(correction.Apply(tomorrow, now + 1800, true) == tomorrow);
     correction.Apply(tomorrow, now + 1900, false);
     assert(correction.Apply(tomorrow, now + 2000, true) == now + 3800);
-    Tennis t; t.valid = true; t.day = LocalDateKey(now);
-    assert(NextTennisRefresh(t, now) == tomorrow);
-    TennisMatch match; match.date = "2026-09-07T20:00Z"; match.state = "pre";
-    t.matches = {match}; assert(NextTennisRefresh(t, now) == now + 1800); // Time TBA.
-    t.matches[0].time_valid = true;
-    assert(NextTennisRefresh(t, now) == now + 3600);
-    t.matches[0].state = "in";
-    assert(NextTennisRefresh(t, now) == now + 300);
-    assert(NextTennisRefresh(t, tomorrow) == tomorrow + 300); // Old day must be fetched.
     FormulaOne f; f.schedule_valid = true;
     f.sessions.push_back({"round", "GP", "FP1", "", now + 7200});
     assert(NextFormulaOneRefresh(f, now) == now + 3600);
@@ -65,7 +57,7 @@ int main() {
     BatteryIndicator battery;
     assert(battery.Update(33, false, false, false, false, false, 100) == "~33%");
     assert(battery.Update(69, true, true, false, false, false, 101) == "⚡ ~69%");
-    assert(battery.Update(100, true, false, true, false, false, 102) == "FULL");
+    assert(battery.Update(100, true, false, true, false, false, 102) == "100% FULL");
     assert(battery.Update(63, false, false, false, false, false, 103) == "SETTLING");
     assert(battery.Update(35, false, false, false, false, false, 134) == "~35%");
     assert(battery.Update(-1, false, false, false, false, false, 135) == "--%");
@@ -81,11 +73,22 @@ int main() {
     }
     BatteryIndicator measured;
     assert(measured.Update(0, false, false, false, false, false, 100, 3448) == "~15%");
-    assert(measured.Update(100, true, true, false, false, false, 101, 4190) == "⚡ ~100%");
-    assert(measured.Update(100, true, false, true, false, false, 102, 4190) == "FULL");
+    assert(measured.Update(100, true, true, false, false, false, 101, 4190) == "⚡ ~99%");
+    assert(measured.Update(100, true, false, true, false, false, 102, 4190) == "100% FULL");
     assert(measured.Update(0, false, false, false, false, false, 103, 3448) == "SETTLING");
     assert(measured.Update(0, false, false, false, false, false, 134, 3448) == "~15%");
     assert(measured.Update(-1, false, false, false, false, false, 135, -1) == "--%");
     assert(512LL * kBatterySampleSeconds >= 10 * 86400);
+    BatteryIndicator shared_curve;
+    assert(shared_curve.Update(51, true, true, false, false, false, 1, 3720) == "⚡ ~65%");
+    assert(shared_curve.Update(51, false, false, false, false, false, 2, 3720) == "SETTLING");
+    assert(shared_curve.Update(51, false, false, false, false, false, 33, 3720) == "~65%");
+    assert(shared_curve.Update(-1, true, true, false, false, false, 34, -1) == "⚡ --%");
+    assert(shared_curve.Update(90, true, false, true, false, false, 35, 4000) == "100% FULL");
+    assert(!ReuseFrame(true, 1, 1, 0)); // Failed completed frame retries.
+    assert(ReuseFrame(true, 1, 0, 0));  // Pending frame already queued.
+    assert(ReuseFrame(true, 1, 1, 1));  // Successful identical frame is reused.
+    assert(!ReuseFrame(false, 1, 1, 1));
+    assert(!ReuseFrame(true, 0, 0, 0)); // Always draw the first frame.
     std::cout << "PASS: event-aware deadlines, DST/midnight, completion corrections, partial schedules, retries, and battery charging/settling display\n";
 }

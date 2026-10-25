@@ -28,15 +28,6 @@ time_t NextFootballRefresh(const Football& f, time_t now) {
         due = std::min(due, EventDeadline(ParseUtcTime(g.date), g.state, g.completed, now));
     return due;
 }
-time_t NextTennisRefresh(const Tennis& t, time_t now) {
-    if (!t.valid || t.day != LocalDateKey(now)) return now + 300;
-    time_t due = NextLocalDay(now);
-    for (const auto& m : t.matches) {
-        if (!m.time_valid && !m.completed) due = std::min(due, now + 1800);
-        else due = std::min(due, EventDeadline(ParseUtcTime(m.date), m.state, m.completed, now));
-    }
-    return due;
-}
 time_t NextFormulaOneRefresh(const FormulaOne& f, time_t now) {
     if (!f.schedule_valid || f.error) return now + 300;
     time_t due = NextLocalDay(now);
