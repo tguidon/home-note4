@@ -1,107 +1,184 @@
 # Home Note4
 
-An English dashboard for the monochrome ZECTRIX NOTE4, with weather for Wilton, Connecticut (06897), the date, an optional private Google Calendar agenda, Formula 1, and NFL scores. It runs directly on the ESP32-S3. No WeChat, ZECTRIX account, API key, or Mac server is required.
+Home Note4 is a personal dashboard for the monochrome ZECTRIX NOTE4 Developer Kit, PCB v1.0.
+It runs on the ESP32-S3 and uses the 400 × 300 e-paper display.
 
-## Current status
+The dashboard has three sections: **Home → F1 → NFL**.
+Home shows weather for Wilton, Connecticut (06897), and an optional private Google Calendar agenda.
+Dates and event times use Eastern time, including daylight-saving changes.
 
-The firmware builds with ESP-IDF **5.4.4** for **ESP32-S3, 16 MB flash, 8 MB octal PSRAM**. Host tests pass against captured API responses and failure cases. Screens have been rendered from the actual firmware drawing code and checked at 400 × 300.
+The device fetches data directly over Wi-Fi.
+It needs no computer server, ZECTRIX account, WeChat account, or API key.
+Firmware changes require a build and USB installation.
+There is no wireless firmware update feature.
 
-**Installed on September 5, 2026.** The purchased NOTE4 DevKit documentation, factory board identifier, and USB chip information match the v1.0 N16R8 profile. Two full factory reads match byte for byte. Flash verification, dashboard boot, 8 MB PSRAM testing, RTC/NFC initialization, display-driver calls, and setup AP startup passed. The owner confirmed that the dashboard works after Wi-Fi setup. This confirms the normal setup and display path; invalid-password recovery, prolonged reconnection tests, and battery endurance remain unverified. Local installation records are in the ignored `dist/` and `backups/` directories.
+## Current firmware
 
-**Version 0.2.0 device verification:** two consecutive US Open fetches each parsed 40 matches; NFL loaded 16 upcoming games. Eleven full-frame updates completed successfully in 1,292–1,318 ms. Rapid navigation and paging were exercised through the local USB commands that use the button action handler. Wi-Fi reconnected and all six previously exported battery records survived; the log now contains 15 records. Visual inspection of this updated screen and physical button timing remain owner checks. The factory backup remains available.
+Version **0.7.0** uses ESP-IDF **5.4.4** with **16 MB flash** and **8 MB octal PSRAM**.
+The October 25, 2026 installation preserved saved Wi-Fi, the calendar link, and battery history.
+Weather, calendar, F1, NFL, and USB navigation passed the installation checks.
+All six host test suites passed with AddressSanitizer and UndefinedBehaviorSanitizer.
 
+The owner added a private calendar through setup and saw its events on the device.
+Physical button behavior after sleep, charger completion, and battery endurance still need observation on the device.
+A successful build or display-driver call does not establish these results.
 
-**Version 0.3.0 device verification:** the F1 feed loaded all 22 Monza qualifying positions with the Italian Grand Prix on September 6 at 09:00 EDT as its anchor. All six classification pages and wraparound were exercised through USB. Thirteen display updates returned ESP_OK in 1,295–1,320 ms. Weather, 16 NFL games, and 40 US Open matches also loaded. All 15 previously exported battery readings survived; 17 are now available. Host sanitizer tests cover all seven session types, missing/malformed feeds, race-day retention, Eastern midnight rollover, and cold starts. Screens were checked using previews from the firmware renderer; physical inspection of this F1 update remains an owner check.
+## Screens and controls
 
-**Version 0.4.0 device verification:** the application-only flash passed hash verification and booted as 0.4.0 on the same ESP32-S3 with 8 MB PSRAM. Saved Wi-Fi reconnected; weather, F1 (22 drivers), NFL (16 games), and US Open (40 matches) loaded. Nine display updates returned ESP_OK in 1,294–1,318 ms; USB navigation returned to the new home screen. All 20 pre-update battery records survived; 23 were exported afterward. Calendar/settings sanitizer tests and a local browser save test passed with invented data. The owner subsequently entered the private Google Calendar link through setup and confirmed that the calendar works on the device. The factory backup remains available; restoration has not been tested.
+| Screen | Content |
+| --- | --- |
+| Home | Current weather, tomorrow's high and low temperatures, rain probability, and up to three calendar events |
+| F1 | The next main race and the latest published session results, four drivers per page |
+| NFL | Four games per page, with live games first, upcoming games next, and completed games last |
 
-**Version 0.5.0 installed (September 7, 2026):** targets 3–4 days between charges using automatic light sleep and event-aware sports fetching. Audio, NFC and RTC supplies remain enabled. The application-only flash passed hash verification. Firmware 0.5.0 booted with RTC/NFC and 8 MB PSRAM initialized, reconnected using saved Wi-Fi, and loaded weather, the private calendar and all sports feeds. USB navigation and ten display updates passed (1163–1190 ms per frame). All 179 pre-flash battery readings were retained, and battery/power exports passed. Unplugged physical button wake and battery endurance remain unverified; USB intentionally inhibits sleep. The September 7 export from 0.4.0 contains 150 uninterrupted battery samples spanning 37 hours 15 minutes, ending at 3.616 V / 33%; the next USB charging sample is 3.843 V / 69%. These readings do not calibrate remaining capacity.
+Home stays on one page.
+Ended events disappear, and later events fill the available rows.
+All-day and overnight events remain until they end.
+The footer shows the last successful refresh time.
 
-**Version 0.6.0 (September 15, 2026):** combines the approved single-page Home update with a provisional battery discharge curve, 30-minute logging (roughly 10 days of history), and a persistent last-discharge diagnostic snapshot. The 0.5.1 run reached 8.22 days of boot uptime; retained battery samples confirm 5.31 uninterrupted days, with the initial records overwritten. The original 0% indication preceded the last battery sample by 29.5 hours. See [the battery review](docs/battery-review-2026-09-15.md) for evidence and limitations. Build and all five host sanitizer suites passed.
-
-**Version 0.7.0 (October 25, 2026):** removes the US Open section and requests, uses one voltage curve for battery and charging estimates, reserves `100% FULL` for the charger completion signal, and allows failed identical display frames to be retried on the next redraw. Power diagnostics now retain the battery label of the last successful frame. The application-only flash passed hash verification; saved Wi-Fi/calendar, all remaining feeds and three-section USB navigation passed. Six host sanitizer suites passed. Battery history and the legacy discharge snapshot were verified after installation. See [the charging review](docs/battery-review-2026-10-25.md).
-
-## How it runs
-
-The firmware is the application. C++ source, the hardware drivers, and ESP-IDF are compiled into native ESP32-S3 machine code. USB flashing writes this binary into the device's nonvolatile flash memory. At startup, the bootloader loads the application and starts its FreeRTOS tasks.
-
-The main task handles buttons and renders cached pages. A dedicated display worker refreshes the panel without blocking input. A background task fetches JSON from the weather and sports APIs and iCalendar data directly from Google over HTTPS. It validates each response and shares a snapshot with the display task. The device stores Wi-Fi settings separately in NVS, so no password is compiled into the application. During setup, the NOTE4 itself serves the small web page used to enter those settings.
-
-Once configured, it operates without a computer. Code changes require a new build and USB flash; this version does not implement wireless firmware updates.
-
-## Pages and controls
-
-- Home is one page: current Wilton weather, tomorrow's high/low and rain probability, and the next three ongoing or upcoming calendar events. Ended appointments disappear; spare rows show later days, including while today's last event is still running. Dates distinguish those later events. A count indicates additional events, which move onto the page as earlier events end. All-day and overnight events remain while ongoing. Times use Eastern time. OK refreshes the home screen; the footer keeps the last successful refresh time without a data-source line.
-- F1: the main Grand Prix name and start time stay at the top of every page. The latest published practice, sprint qualifying, sprint race, qualifying, or race classification appears below, four drivers per page. OK pages through every driver. Positions and times come from the provider; qualifying order can differ from the final starting grid after penalties.
-- NFL: four games per page, with live games first, upcoming games next, and completed games last. Scheduled games show local dates and times, not 0–0 scores.
-- The date follows Eastern time, including daylight-saving changes.
-- Battery status appears beside ONLINE/OFFLINE. While charging, a lightning bolt accompanies the approximate percentage, such as `⚡ ~69%`. Charging uses the same provisional voltage curve as battery operation, capped at 99%. Charging voltage can inflate this estimate; it is not measured capacity. Only the charging circuit's full signal displays `100% FULL`. Other USB states show USB or a power error. Status is sampled once per second; percentage-only changes appear on the next normal redraw (at most five minutes), while charging-state changes trigger a redraw. After unplugging, SETTLING appears for 30 seconds, followed by a smoothed approximate percentage such as `~33%`. `--%` means the reading is unavailable. Raw voltage and the original percentage remain in the battery log for comparison; smoothing does not calibrate capacity.
+F1 keeps the main race at the top throughout its Eastern calendar day.
+At midnight, the race heading advances to the next scheduled Grand Prix.
+Session results show their own Grand Prix name and date.
+Published qualifying results can differ from the final starting grid after penalties.
+F1 results are not live timing.
 
 | Button | Action |
 | --- | --- |
-| Side UP / DOWN | Switch sections: Home → F1 → NFL |
-| Front OK | Next results page; request a refresh on Home and other single-page sections, limited to once per minute |
-| Hold front OK about 1.5 seconds | Restart into Wi-Fi and calendar setup |
-| Hold side DOWN about 3 seconds | Shut down; USB can keep the power rail energized |
+| Side UP / DOWN | Change sections in the Home → F1 → NFL sequence |
+| Front OK | Advance through results pages, or request a refresh on a single-page section |
+| Hold front OK for about 1.5 seconds | Restart into Wi-Fi and calendar setup |
+| Hold side DOWN for about 3 seconds | Shut down the device |
 
-Navigation acknowledges taps with a 120 ms LED pulse. There is no three-second artificial redraw delay. The display worker has one pending frame: rapid taps replace obsolete frames rather than replaying every intermediate screen. Page changes use cached RAM data and never wait for HTTP. Empty pages show a loading state; cached pages keep their contents while feeds update. The e-paper waveform still takes time, so a page change cannot be instantaneous like an LCD. Full 1bpp refreshes keep text clean; panel power is removed after each refresh.
+Manual refresh has a one-minute limit.
+USB can keep the device powered after shutdown.
 
+A tap produces a 120 ms LED pulse.
+Navigation uses cached data and does not wait for network requests.
+Rapid taps replace pending frames, so the display does not replay every intermediate page.
+Full e-paper refreshes take time.
+The firmware switches off panel power after each refresh.
 
-The F1 race anchor follows the New York calendar day. It shows the main race throughout race day, even after the start or finish. At midnight Eastern, it advances to the next scheduled Grand Prix. The latest results keep their own Grand Prix name and session date below that anchor, so last weekend's results are not confused with the next race. This uses actual race timestamps, including Saturday races and daylight-saving changes. A new session result returns the F1 section to its first page.
+## Configure Wi-Fi
 
-F1 waits for published classifications and keeps the prior session while newer results are missing. It checks at most eight recent sessions during a cold-start lookup. Failed requests preserve cached data with a stale indicator. The provider's alpha endpoint has no completion/finality flag or guaranteed publication delay: these are published results, not live timing or a certified final grid. Schedules and results are validated separately. The next season is checked after the last scheduled race; before the first session of a new year, the prior season is checked for results. An unavailable future calendar shows “Next race schedule pending.” The date-based anchor also advances from cached schedule data while offline.
+1. Power the NOTE4 through USB.
+2. Read the `HomeNote4-XXXX` network name and password on the display.
+3. Join that network from a phone or computer.
+4. If the phone reports no internet, keep the connection.
+5. Open **http://192.168.4.1** in a browser.
+6. Select **Set up a Wi-Fi network**.
+7. Enter the name and password for your home **2.4 GHz** network.
+8. Select **Save and restart**.
+9. Reconnect the phone or computer to your home network.
 
-## Wi-Fi setup after installation
+The NOTE4 restarts, connects to Wi-Fi, sets its clock, and fetches dashboard data.
+The setup network keeps the same device-specific name and saved password across setup sessions.
+Each session uses a new form token.
 
-1. Power the NOTE4 over USB.
-2. Read the temporary `HomeNote4-XXXX` network name and its saved per-device password on the display.
-3. Join that network from a phone or computer. Stay connected if it reports no internet.
-4. Open **http://192.168.4.1** in a browser.
-5. Select **Set up a Wi-Fi network**, enter your home **2.4 GHz** network name and password, then choose **Save and restart**.
-6. Reconnect the phone or computer to your home network. The NOTE4 restarts, joins Wi-Fi, sets its clock, and loads the dashboard.
+The device supports WPA2/WPA3 personal networks with an 8–63 byte password.
+It also supports open networks with a blank password.
+It does not support enterprise Wi-Fi or networks that require a browser login.
 
-Setup accepts WPA2/WPA3 personal networks with an 8–63 byte password, or open networks with a blank password. Enterprise Wi-Fi and networks that require a browser login are not supported. If connection fails after 30 seconds, the dashboard opens offline and keeps retrying. Hold OK to reopen setup and correct credentials; the setup password is reused.
+If the connection fails after 30 seconds, the dashboard opens offline and retries.
+The device keeps the saved credentials.
 
-Network details and the optional calendar link are saved in the device's local `home_note` NVS namespace. A versioned settings value keeps them together; existing Wi-Fi settings migrate when settings are next saved. They are not embedded in the firmware or logged. This build does not enable flash encryption. Keep flash backups private because they may contain credentials. The setup server runs only in AP setup mode, behind its saved WPA2 password; a per-session form token protects saving.
+To change the saved Wi-Fi configuration:
 
-Internet access to NTP and the data providers is required. HTTPS certificate validation remains enabled. If the clock cannot synchronize, data requests wait. If a provider fails, the last successful data stays in RAM with a stale indicator and update timestamp; it is not retained across a reboot.
+1. Hold front OK for about 1.5 seconds.
+2. Repeat the Wi-Fi procedure.
 
 ## Add a private Google Calendar
 
-1. Copy the calendar's **Secret address in iCal format** while your phone still has internet access. In Google Calendar settings, select the calendar, then **Integrate calendar**. Google may require its desktop website to expose this setting. Do not use the public address or enable public sharing. [Google's instructions](https://support.google.com/calendar/answer/37648?hl=en).
-2. Hold the NOTE4's front OK button for about 1.5 seconds to enter setup.
-3. On your phone, join the temporary `HomeNote4-XXXX` Wi-Fi using the password shown on the NOTE4. Stay connected despite the no-internet notice.
-4. Open **http://192.168.4.1**. Keep **Keep saved Wi-Fi** selected.
-5. Under Calendar, choose **Add or replace a calendar**, paste the secret link, and tap **Save and restart**.
-6. Return your phone to home Wi-Fi. The NOTE4 reconnects, synchronizes its clock, and fetches your events.
+Before you connect to the NOTE4 setup network:
 
-The calendar stays private and read-only. Anyone with the secret link can read it. Enter the link directly into the device's setup page; keep it out of chat, Git, screenshots, and logs. The page contains no third-party scripts or assets and never sends the saved link back to the browser. The link travels to the local device over its password-protected setup Wi-Fi and is used only for a certificate-verified HTTPS request to `calendar.google.com`. It is stored in NVS, not the firmware image. Physical flash access can read it because this device does not enable flash encryption.
+1. Open Google Calendar settings on a phone or computer with internet access.
+2. Select the calendar.
+3. Open **Integrate calendar**.
+4. Copy the **Secret address in iCal format**.
 
-To change calendars or remove the link, repeat setup and select the relevant Calendar option. Removing it clears the RAM agenda on restart and does not change Google events. **Keep current calendar setting** preserves the link when you change Wi-Fi. Saving a new link checks its private Google URL format; the device fetches and validates the feed after restarting. A revoked or inaccessible link shows an unavailable state and retries.
+The desktop Google Calendar website exposes this setting.
+[Google's instructions](https://support.google.com/calendar/answer/37648?hl=en) describe calendar synchronization.
+The secret address gives read-only access without public calendar sharing.
 
-Calendar requests normally run every five minutes and after local midnight. Consecutive transport/parse failures back off from one minute to at most one hour. Feed failures keep the last valid RAM agenda with a stale indicator. Events are expanded for 90 days; an expired offline cache asks you to reconnect. Event data is not written to flash or retained after a reboot. Google controls when an edited event appears in its feed, so polling does not guarantee immediate updates.
+To save the calendar link:
 
-The bounded iCalendar parser supports ordinary daily, weekly, monthly, and yearly rules; intervals and counts; UNTIL, BYDAY, BYMONTH, BYMONTHDAY, BYSETPOS, and WKST; all-day events; EXDATE/RDATE; and moved/cancelled single instances. It handles UTC, floating Eastern times, and embedded VTIMEZONE observances with annual rules or explicit transition dates. Tests cover US and European DST changes. Recurrence follows [RFC 5545](https://www.rfc-editor.org/rfc/rfc5545.html).
+1. Hold front OK for about 1.5 seconds.
+2. Join the `HomeNote4-XXXX` network with the password on the display.
+3. If the phone reports no internet, keep the connection.
+4. Open **http://192.168.4.1**.
+5. Keep **Keep saved Wi-Fi** selected.
+6. Under **Calendar**, select **Add or replace a calendar**.
+7. Paste the secret address.
+8. Select **Save and restart**.
+9. Reconnect the phone or computer to your home network.
 
-This is not a complete RFC implementation. Sub-daily rules, EXRULE, RANGE=THISANDFUTURE, unknown time zones, and other unsupported event forms produce a visible warning rather than an empty-calendar claim. Large calendars are bounded at 3 MiB, 2,000 event components, 1,024 displayed occurrences, and a shared recurrence work budget. Structural or download-limit failures preserve the previous agenda; unsupported events are omitted with a warning. Check Google Calendar if the warning appears. Tests use invented appointments and a fake secret URL; no personal calendar is checked into this repository.
+The NOTE4 connects directly to Google and fetches events.
+The calendar is optional.
+The setup page can keep, replace, or remove the saved calendar link.
+Removal clears the device agenda after restart and leaves Google events unchanged.
 
-## Data sources
+### Calendar limits
+
+The parser expands events over a 90-day window.
+It supports all-day events, common recurrence rules, and changes to individual events.
+It handles UTC, Eastern time, and embedded time-zone definitions with supported transitions.
+Host tests cover US and European daylight-saving changes.
+
+The parser does not implement all of RFC 5545.
+Unsupported recurrence rules or time zones produce a warning, and the device omits those events.
+Downloads have a 3 MiB limit.
+The parser also limits event components to 2,000 and expanded occurrences to 1,024.
+A download or structural error preserves the previous agenda.
+Google controls how soon event changes appear in its feed.
+
+If the device shows a calendar warning, use Google Calendar to see the complete agenda.
+
+## Privacy and offline behavior
+
+The device saves Wi-Fi credentials and the calendar link in local nonvolatile storage (NVS).
+The firmware image contains neither secret.
+The setup page contains no third-party scripts and does not return the saved calendar link to the browser.
+The setup network uses WPA2 protection.
+The device uses HTTPS certificate validation for data requests.
+
+This firmware does not enable flash encryption.
+A flash backup can contain Wi-Fi credentials and the private calendar link.
+Anyone with the calendar link can read its events.
+
+- Enter the calendar link directly into the local setup page.
+- Keep credentials and calendar links out of Git, chat, screenshots, and logs.
+- Keep flash backups private.
+
+The clock must synchronize before data requests start.
+If a provider request fails, the device keeps the last successful data in RAM and shows a stale indicator.
+Dashboard data does not survive a restart.
+Saved credentials, battery history, and power diagnostics do survive a restart.
+
+## Data sources and refresh intervals
 
 | Content | Source | Normal refresh |
 | --- | --- | --- |
-| Calendar | Your private Google Calendar iCal feed | 5 minutes, plus each new local day |
-| Weather | [Open-Meteo](https://open-meteo.com/en/docs), CC BY 4.0, free noncommercial API | 15 minutes |
-| F1 | [Jolpica F1 alpha schedules/results API](https://api.jolpi.ca/docs/) | Event-aware: daily on quiet days; hourly before sessions; 5 minutes near sessions and while recent results are pending |
-| NFL | [ESPN public scoreboard endpoint](https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard) | Event-aware: daily on quiet days; hourly before games; 5 minutes near/live games |
-| Clock | `pool.ntp.org`, `time.google.com` | SNTP |
+| Calendar | Your private Google Calendar iCal feed | Every 5 minutes and after local midnight |
+| Weather | [Open-Meteo](https://open-meteo.com/en/docs) | Every 15 minutes |
+| F1 | [Jolpica F1 alpha API](https://api.jolpi.ca/docs/) | Daily on quiet days, hourly before sessions, every 5 minutes near sessions or pending results |
+| NFL | [ESPN scoreboard endpoint](https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard) | Daily on quiet days, hourly before games, every 5 minutes near or during games |
+| Clock | `pool.ntp.org`, `time.google.com` | SNTP synchronization |
 
-ESPN's endpoint is publicly accessible but undocumented; it is not an open-source or guaranteed service. The NFL adapter is in `main/dashboard.cc` and `main/feeds.cc`. Requests use a tested standard-library compatibility header. A reusable download buffer is allocated at startup in PSRAM. Calendar responses have a 3 MiB limit; other feeds have a 768 KiB limit. Requests have time and size limits. Empty schedules and unavailable results have explicit display states. Source attribution appears on the sports pages and in this table. Test fixtures capture provider responses; they are test samples, not the running dashboard's data source.
+Failed requests use increasing retry delays, up to one hour.
+F1 keeps prior session results until the provider publishes newer results.
+The Jolpica alpha API does not guarantee publication time or final classifications.
+The ESPN endpoint is public but undocumented and has no service guarantee.
+Test fixtures contain sample responses, and the device fetches its own data.
 
-Weather coordinates, units, and endpoints are in `main/feeds.cc`. Eastern timezone rules are in `main/dashboard.h`.
+Weather coordinates, units, and source URLs are in [main/feeds.cc](main/feeds.cc).
+The timezone definition is in [main/dashboard.h](main/dashboard.h).
+These values require a firmware change.
+The setup page configures Wi-Fi and the calendar link.
 
-## Build
+## Build and host tests
 
-Install and activate [ESP-IDF 5.4.4](https://docs.espressif.com/projects/esp-idf/en/v5.4.4/esp32s3/get-started/linux-macos-setup.html), then run:
+1. Install [ESP-IDF 5.4.4](https://docs.espressif.com/projects/esp-idf/en/v5.4.4/esp32s3/get-started/linux-macos-setup.html).
+2. Activate the ESP-IDF environment.
+3. From the repository root, run these commands in order:
 
 ```sh
 idf.py set-target esp32s3
@@ -110,7 +187,14 @@ bash tools/test-host.sh
 idf.py merge-bin -o home-note4-merged.bin
 ```
 
-On the original development Mac, the ignored `tools/activate-local.sh` helper activates its local toolchain. On another computer, activate your own ESP-IDF installation as described above.
+The host script runs six suites with AddressSanitizer and UndefinedBehaviorSanitizer.
+The suites cover feed parsing, calendar recurrence, navigation, battery history, refresh policy, and power diagnostics.
+The script also creates screen previews from the firmware drawing code in `build-host/previews/`.
+
+The ignored `tools/activate-local.sh` helper contains paths for the original development Mac.
+It is not part of a fresh clone.
+
+On that Mac, run:
 
 ```sh
 source tools/activate-local.sh
@@ -118,84 +202,142 @@ idf.py build
 bash tools/test-host.sh
 ```
 
-`build/home_note4.bin` is an **application-only** image at offset `0x10000`. It must not be written to `0x0`.
+## USB installation
 
-`build/home-note4-merged.bin` includes the bootloader, partition table, and application. Its write offset is `0x0`. The merged image fills gaps, including the NVS region, with erased bytes, so installation replaces settings. The 3 MiB application partition has ample room for the approximately 1.1 MiB application.
+The supported hardware is the **monochrome NOTE4 Developer Kit PCB v1.0**, with an ESP32-S3 N16R8.
+These images do not target the NOTE4C or other board revisions.
 
-## Before first installation
+| Image | Contents | Write offset |
+| --- | --- | --- |
+| `build/home_note4.bin` | Application only | `0x10000` |
+| `build/home-note4-merged.bin` | Bootloader, partition table, and application | `0x0` |
 
-Confirm the black-and-white NOTE4 PCB v1.0 mapping, ESP32-S3 N16R8 memory, and the correct USB port. Do not use these images on NOTE4C or an unverified board revision.
+**CAUTION: Do not write the application-only image at `0x0`.**
+This write overwrites the bootloader.
 
-Read the device's security state and full flash before any write. Preserve a **16,777,216-byte** factory backup, then perform a second read and compare hashes. Do not infer that a backup guarantees factory recovery: the device's security configuration and the batch-specific recovery procedure must also be checked. The original development device has two matching 16 MiB backups of factory firmware 3.6.2 under the ignored `backups/` directory. Their checksum and original partition layout are recorded alongside them. Factory restoration has not been tested.
+**CAUTION: Export battery history and power diagnostics before a firmware update.**
+The merged image overwrites NVS, including saved credentials and diagnostic history.
+An application-only update preserves NVS with the existing partition layout.
 
-After those checks, install the verified merged image using the matched serial port and esptool's syntax for the installed version. Do not use an erase-all command. Capture a 115200-baud serial log and validate:
+Before the first installation:
 
-- USB boot and 8 MB PSRAM detection.
-- Readable English display and all three buttons.
-- Setup from a phone, invalid-password recovery, and successful Wi-Fi connection.
-- Clock sync, real weather, F1, and all NFL pages.
-- Wi-Fi reconnection and clear stale-data behavior.
-- Panel power off between refreshes and battery shutdown with USB disconnected.
+1. Make sure that the board revision, memory, and USB port match the supported hardware.
+2. Read the device security state.
+3. Save a full **16,777,216-byte** flash backup.
+4. Read the full flash a second time.
+5. Make sure that both backup hashes match.
+6. Make sure that the recovery procedure matches the device security state and hardware batch.
 
-## Power and hardware scope
+The original development device has two matching factory backups in the ignored `backups/` directory.
+Factory restoration remains untested.
+A matching backup alone does not establish recovery.
 
-The original battery target was **3–4 days**. The September 15 inspection supports roughly a week in this workload; exact unplug-to-cutoff duration remains unknown because early records wrapped. Firmware 0.5.0 enables ESP-IDF frequency scaling (40–160 MHz), tickless idle and automatic light sleep while keeping Wi-Fi associated with minimum modem power saving. Cached pages remain in RAM. Button interrupts wake the input worker; debounce and long-press polling run only while needed. The main task wakes on button/feed notifications and services power state about once per second. USB, setup and display waveforms inhibit automatic sleep. The USB controller also has its own connection-aware sleep protection.
+To install the firmware:
 
-At the owner's request, **audio, NFC and RTC supplies remain enabled**. Existing e-paper power-off between frames and explicit DOWN-button shutdown are preserved. There is no new peripheral power gating, automatic deep sleep, radio-off schedule, or OTA path. The observed week-long trial supports the endurance goal; physical button wake behavior and future workloads still require device observation.
+1. Make sure that the device partition table matches the image layout.
+2. Write the selected image at its listed offset with esptool syntax for the installed version.
+3. Capture a 115200-baud serial log.
+4. Make sure that startup detects 8 MB PSRAM and initializes the board.
+5. Make sure that Wi-Fi setup, clock synchronization, and all three dashboard sections operate.
+6. Make sure that all three buttons operate after an idle period.
+7. Make sure that Wi-Fi reconnects after a connection failure.
+8. With USB disconnected, make sure that the DOWN hold shuts down battery power.
 
-Sports use Eastern dates. Valid quiet-day schedules wait until local midnight; same-day starts are checked hourly and every five minutes within 30 minutes of the start. Live NFL poll every five minutes. Unknown, postponed or overdue states are checked every 30 minutes; incomplete schedules every five minutes. Completed NFL results receive a correction check 30 minutes after first observing completion, then the next daily check. F1 checks recently published sessions for four hours after their start, and unpublished results every five minutes for up to 12 hours across midnight before slowing down. A newly discovered classification gets one 30-minute correction check. This does not turn Jolpica into guaranteed live timing. The main-race anchor and race-day retention remain unchanged.
+Do not use an erase-all command.
 
-Weather stays at 15 minutes and calendar at five minutes. Fetch failures use exponential backoff, capped at one hour. Manual refresh retains its one-minute limit. Daily sports caches show their actual update timestamp and do not become STALE after just two quiet hours. Publications are batched to avoid redundant updating frames. If home Wi-Fi is unavailable at startup, saved credentials remain active and connection attempts back off to roughly five-minute delays; hold OK to enter setup explicitly.
+## Battery and power
 
-The board and display drivers retain the official upstream mapping and waveform. The application asserts the board power latch before networking, serializes panel access on a dedicated display task, and uses a separate data-fetch task with protected snapshots. Full refreshes avoid partial-refresh state and ghosting complications across entirely different pages.
+The firmware uses frequency scaling, automatic light sleep, and Wi-Fi modem power saving.
+USB, setup, and display refreshes prevent automatic sleep during those operations.
+Audio, NFC, and RTC supplies remain enabled.
+Panel power switches off between refreshes.
+There is no automatic deep-sleep schedule or scheduled Wi-Fi shutdown.
 
-## Code map
+The battery label is an estimate from a provisional voltage curve.
+Charging uses the same curve, with a 99% limit.
+Only the charger completion signal produces `100% FULL`.
+Charging voltage can inflate the estimate.
 
-- `main/app_main.cc`: startup, screen updates, buttons, and shutdown.
-- `main/network.cc`, `main/setup.html`: Wi-Fi storage, local setup, SNTP, and bounded HTTPS.
-- `main/feeds.cc`: source URLs, polling, and snapshot synchronization.
-- `main/dashboard.cc`: response validation, score ordering, and timezone conversion.
-- `main/render.cc`: the 400 × 300 screen layout and section/page mapping.
-- `main/calendar.cc`, `main/calendar_rules.cc`: bounded iCalendar parsing, recurrence expansion, timezone conversion, and agenda selection.
-- `main/settings.cc`: private URL validation and setup changes that preserve existing settings.
-- `main/formula_one.cc`: session classifications, schedule validation, race-day anchors, and bounded result lookup.
-- `main/display_worker.cc`: asynchronous panel access and pending-frame replacement.
-- `main/battery_history.cc`: bounded persistent battery history.
-- `tests/`: data, failure, timezone, credential, and rendering checks. Host tests use AddressSanitizer and UndefinedBehaviorSanitizer.
+After USB disconnection, `SETTLING` appears for 30 seconds before the smoothed estimate.
+`--%` means that no valid estimate is available.
+Percentage changes appear on the next normal redraw.
+Power-state changes request a redraw.
+The raw CSV percentage keeps the original board formula for comparison across firmware versions.
 
-Based on [itopinion/zectrix-note4-epd-demo](https://github.com/itopinion/zectrix-note4-epd-demo). Its MIT license and third-party notices remain in the repository. The original README is preserved in `docs/UPSTREAM_README.md`.
+The initial endurance target was 3–4 days.
+The September trial retained 5.31 uninterrupted days of battery samples within 8.22 days of boot uptime.
+Earlier records rotated out, so the exact discharge duration is unknown.
+The October boot uptime included charging and does not establish continuous battery endurance.
+Evidence and limits appear in the [September battery review](docs/battery-review-2026-09-15.md) and [October charging review](docs/battery-review-2026-10-25.md).
 
+## Export local diagnostics
 
-## Local battery history
+The device saves a battery sample every 30 minutes, at startup, on power transitions, and before button shutdown.
+The history holds 512 readings and replaces the oldest readings as new ones arrive.
+Regular samples alone cover about ten days and sixteen hours.
+Restarts and power transitions shorten that period.
+The history contains no credentials or calendar data, and the device never uploads it.
 
-The device saves a raw battery reading at startup (after charger settling), every 30 minutes while running, on observed charge/power transitions (limited to one write per minute), and before button-requested shutdown. A bounded NVS ring holds the latest 512 readings: about ten days and sixteen hours at the regular interval, less with frequent restarts. It overwrites the oldest readings and survives power loss and app-only firmware updates. It needs no partition changes and never erases Wi-Fi settings to recover storage. Logging stops after a storage error until the next boot.
+Power diagnostics contain reset information, sleep attempts, network counters, and display counters.
+They also record the time, voltage, and battery label of the last successful frame.
+Sleep counters do not measure electrical current.
+A successful display-driver return does not prove visible output.
 
-Each reading contains sequence number, random boot ID, Unix timestamp (zero before clock sync), uptime in seconds, averaged/calibrated voltage in millivolts, estimated percentage, and battery-valid, external-power, charging, full, fault, no-battery, and Wi-Fi-connected flags. Timestamps and boot IDs help separate interrupted discharge sessions. The log contains no SSID, password, location, or fetched feed data. It is never uploaded. NVS uses wear levelling; the 30-minute cadence halves regular writes compared with 0.5.1 without requiring extra screen refreshes.
+To export diagnostics:
 
-To export locally, close any serial monitor, activate the ESP-IDF environment, and run:
+1. Close any serial monitor.
+2. Activate the ESP-IDF environment.
+3. Replace each example port with the current device port.
+4. Use a new output filename for each export.
+5. Run the battery exporter:
 
 ```sh
 python tools/export-battery.py --port /dev/cu.usbmodem2101 --output battery-2026-09-05.csv
 ```
 
-Use a fresh output filename each time. The script validates row counts and sequence continuity and saves only battery CSV records. Opening USB can restart the board on this Mac; previously saved readings remain available. A serial terminal can also send `battery` followed by Enter at 115200 baud. Export works in both the dashboard and Wi-Fi setup modes.
+6. Run the power exporter:
 
-The readings will help estimate runtime and tune the voltage curve after normal unplugged use. Charging and load affect voltage, so this remains an estimate rather than a measured state of charge. A sudden low-battery power loss may occur up to one sampling interval after the last saved reading. The 0.5.1 trial informs a provisional display-only discharge curve; its unrecorded upper range is interpolated, not measured. CSV percent remains the original board formula so old and new telemetry are comparable; use millivolts for the revised curve. The new ~0% means bottom reserve near 3.0 V, not immediate shutdown. Export when the device gets low; frequent restarts or charge transitions shorten log retention.
+```sh
+python tools/export-power.py --port /dev/cu.usbmodem101 --output power-2026-09-07.local.json
+```
 
+The exporters save battery CSV or diagnostic JSON without raw application logs.
+Opening the USB port can restart this board on macOS.
+Saved history survives that restart.
 
-## Local USB diagnostics
+### USB commands
 
-At 115200 baud, send `next`, `previous`, or `more` followed by Enter to exercise the same navigation actions as the buttons. `refresh` requests a rate-limited background refresh; `battery` exports the saved battery log. The `power` command exports bounded JSON diagnostic snapshots. These commands only work locally over USB. The display task logs each completed frame's duration and result. Opening the USB port can restart this board on macOS.
+At 115200 baud, the local serial console accepts these commands followed by Enter:
 
+| Command | Action |
+| --- | --- |
+| `next` / `previous` | Change sections through the button action handler |
+| `more` | Apply the front OK action |
+| `refresh` | Request a background refresh with the one-minute limit |
+| `battery` | Export saved battery readings |
+| `power` | Export power diagnostics |
 
-## Power diagnostics and next battery trial
+## Code map
 
-`python tools/export-power.py --port /dev/cu.usbmodem101 --output power-2026-09-07.local.json`
+| Files | Responsibility |
+| --- | --- |
+| `main/app_main.cc`, `main/app_events.cc` | Startup, buttons, navigation, and shutdown |
+| `main/network.cc`, `main/setup.html`, `main/settings.cc` | Wi-Fi, local setup, saved configuration, clock synchronization, and HTTPS |
+| `main/feeds.cc`, `main/refresh_policy.cc` | Data requests, refresh intervals, and shared snapshots |
+| `main/dashboard.cc`, `main/formula_one.cc` | Weather and sports parsing, result order, and race dates |
+| `main/calendar.cc`, `main/calendar_rules.cc` | iCalendar parsing, recurrence, time zones, and agenda selection |
+| `main/render.cc`, `main/display_worker.cc` | Screen layouts and panel refreshes |
+| `main/battery_history.cc`, `main/battery_estimate.h`, `main/battery_indicator.h` | Battery history and the on-screen estimate |
+| `main/power_manager.cc` | Sleep policy and power diagnostics |
+| `components/zectrix_board/`, `components/zectrix_epd/` | Board and display drivers |
+| `tests/` | Host suites, provider fixtures, and screen previews |
 
-Use the currently verified USB port and a fresh output filename. The exporter saves only framed diagnostic JSON. It does not save raw application logs. The existing `tools/export-battery.py` command and CSV format are unchanged.
+## Project origin
 
-Power diagnostics contain firmware version, boot ID, reset reason, uptime, time/count of automatic sleep attempts, HTTP body bytes/request duration/failures, and display duration/count/failures. Version 0.7.0 adds the most recent display-attempt time and the last successful frame's time, voltage and battery label. Times are microseconds since boot. Older snapshots have zero times, -1 voltage and an empty label. A successful driver return does not prove optical display output. Sleep-attempt time is the ESP-IDF callback's elapsed interval, including entry/exit overhead and rejected attempts; it is not a current measurement or an exact successful-sleep duty cycle. HTTP bytes exclude transport headers and radio overhead. Three small NVS snapshots preserve the latest counters, the previous boot's last saved counters, and the last battery-powered sample (`discharge`). USB boots cannot replace the discharge snapshot; its totals still include the whole boot, including earlier charging. Older firmware exports without this optional snapshot remain supported. They are saved with battery samples, not on every request. Storage errors stop diagnostic writes until restart without erasing settings or battery history.
+Home Note4 started from [itopinion/zectrix-note4-epd-demo](https://github.com/itopinion/zectrix-note4-epd-demo).
+It keeps the upstream board mapping and display waveform.
+The active application is the Home Note4 dashboard.
+Some component names and reference documents still describe the original demo.
 
-After deployment, first verify all three buttons after an idle period, LED acknowledgement, long presses, USB reconnect/export, unchanged peripheral initialization, and a display update. Confirm quiet-day and live-event deadlines in the serial log. Charge to `100% FULL`, unplug and use normally. When low, reconnect and export both battery CSV and power JSON before reflashing. Compare runs by firmware/boot ID and exclude charging samples from discharge estimates. A 3–4 day result remains a goal until this physical trial is complete.
-
-The setup AP now keeps its password in `home_note/setup_psk`, separate from Wi-Fi/calendar settings. The first setup under 0.5.0 establishes it once, because the old RAM-only password is unavailable after restart. Subsequent setup sessions reuse it; the browser form token remains random for each session. A settings/storage error does not silently replace an existing setup password.
+The [upstream README](docs/UPSTREAM_README.md) preserves that project description.
+The MIT license and [third-party notices](THIRD_PARTY_NOTICES.md) remain in the repository.
