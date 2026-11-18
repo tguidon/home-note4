@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "skills": {
+    "develop-zectrix-note4": {
+      "source": "tguidon/skills",
+      "sourceType": "github",
+      "skillPath": "skills/develop-zectrix-note4/SKILL.md",
+      "computedHash": "9949b9ac5ca5747741456f227a5cb19c8c11e77e52241607f00df39426b0d3a2"
+    }
+  }
+}

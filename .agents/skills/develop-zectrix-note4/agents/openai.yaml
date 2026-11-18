@@ -1,0 +1,7 @@
+interface:
+  display_name: "Develop Zectrix NOTE4"
+  short_description: "Build, flash, and troubleshoot NOTE4 firmware"
+  default_prompt: "Use $develop-zectrix-note4 to build and deploy firmware for my Zectrix NOTE4 Developer Kit."
+
+policy:
+  allow_implicit_invocation: true
